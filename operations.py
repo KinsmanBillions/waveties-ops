@@ -224,6 +224,11 @@ def insert(table, data: dict):
         conn.execute(f"INSERT INTO {table} ({cols}) VALUES ({placeholders})", list(data.values()))
 
 
+def delete(table, id_col, id_val):
+    with get_conn() as conn:
+        conn.execute(f"DELETE FROM {table} WHERE {id_col}=?", (id_val,))
+
+
 def update(table, id_col, id_val, data: dict):
     sets = ", ".join([f"{k}=?" for k in data.keys()])
     with get_conn() as conn:

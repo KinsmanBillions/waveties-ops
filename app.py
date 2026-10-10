@@ -858,6 +858,68 @@ def ops_client_new():
     return redirect(url_for("ops_clients"))
 
 
+@app.route("/ops/clients/<client_id>/edit", methods=["GET", "POST"])
+@login_required
+@admin_required
+def ops_client_edit(client_id):
+    client = ops.get_one("clients", "client_id", client_id)
+    if not client:
+        flash("Client not found.", "danger")
+        return redirect(url_for("ops_clients"))
+    if request.method == "POST":
+        company = request.form.get("company_name", "").strip()
+        if not company:
+            flash("Company name is required.", "danger")
+            return redirect(url_for("ops_client_edit", client_id=client_id))
+        ops.update("clients", "client_id", client_id, {
+            "company_name": company,
+            "contact_person": request.form.get("contact_person", ""),
+            "phone": request.form.get("phone", ""),
+            "email": request.form.get("email", ""),
+            "country": request.form.get("country", ""),
+            "city": request.form.get("city", ""),
+            "client_type": request.form.get("client_type", "Importer"),
+            "preferred_currency": request.form.get("preferred_currency", "USD"),
+            "credit_terms": int(request.form.get("credit_terms", 0) or 0),
+            "status": request.form.get("status", "Active"),
+            "notes": request.form.get("notes", ""),
+        })
+        flash(f"Client {client_id} updated.", "success")
+        return redirect(url_for("ops_clients"))
+    return render_template(
+        "ops_client_edit.html",
+        client=client,
+        company=COMPANY,
+        user=session,
+        client_types=CLIENT_TYPES,
+        currencies=CURRENCIES,
+        statuses=["Active", "Inactive", "Suspended", "Prospect"],
+    )
+
+
+@app.route("/ops/clients/<client_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def ops_client_delete(client_id):
+    client = ops.get_one("clients", "client_id", client_id)
+    if not client:
+        flash("Client not found.", "danger")
+        return redirect(url_for("ops_clients"))
+    # Block delete if client has orders
+    orders = [o for o in ops.order_list() if o.get("client_id") == client_id]
+    if orders:
+        flash(
+            f"Cannot delete {client_id}: {len(orders)} order(s) linked. "
+            "Set status to Inactive instead, or reassign orders first.",
+            "danger",
+        )
+        return redirect(url_for("ops_clients"))
+    ops.delete("clients", "client_id", client_id)
+    flash(f"Client {client_id} ({client.get('company_name','')}) deleted.", "success")
+    return redirect(url_for("ops_clients"))
+
+
+
 @app.route("/ops/orders")
 @login_required
 def ops_orders():
