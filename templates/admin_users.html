@@ -25,8 +25,9 @@
         <td><b>{{ u.username }}</b></td>
         <td>{{ u.name }}</td>
         <td>
-          <span class="badge-role" style="{% if u.role == 'admin' %}background:#0A2540;color:#00B4D8;{% endif %}">
-            {{ u.role }}
+          {% set r = u.role if u.role != 'worker' else 'receptionist' %}
+          <span class="badge-role" style="{% if r == 'admin' %}background:#0A2540;color:#00B4D8;{% elif r == 'manager' %}background:#0077B6;color:white;{% elif r == 'accountant' %}background:#10B981;color:white;{% elif r == 'operations' %}background:#F59E0B;color:#1A1A2E;{% else %}background:#E2E8F0;color:#0A2540;{% endif %}">
+            {{ role_labels.get(r, r)|title if role_labels is defined else r|title }}
           </span>
         </td>
         <td>{{ 'Active' if u.active else 'Disabled' }}</td>
@@ -38,5 +39,23 @@
       {% endfor %}
     </tbody>
   </table>
+</div>
+
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Role permissions</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Role</th><th>Create records</th><th>Update status</th><th>Mark paid / Accounts</th><th>Edit / Delete</th><th>Users &amp; system</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><b>Receptionist</b></td><td>✓</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td><b>Operations</b></td><td>✓</td><td>✓</td><td>—</td><td>—</td><td>—</td></tr>
+        <tr><td><b>Accountant</b></td><td>✓</td><td>—</td><td>✓</td><td>—</td><td>—</td></tr>
+        <tr><td><b>Manager</b></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>—</td></tr>
+        <tr><td><b>Admin</b></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 {% endblock %}

@@ -40,7 +40,7 @@
         <tr>
           <th>ID</th><th>Company</th><th>Contact</th><th>Phone</th><th>Email</th>
           <th>Country</th><th>Type</th><th>Status</th>
-          {% if session.get('role') == 'admin' %}<th>Actions</th>{% endif %}
+          {% if session.get('role') in ['admin', 'manager'] %}<th>Actions</th>{% endif %}
         </tr>
       </thead>
       <tbody>
@@ -60,7 +60,7 @@
             <span class="pill">{{ c.status }}</span>
             {% endif %}
           </td>
-          {% if session.get('role') == 'admin' %}
+          {% if session.get('role') in ['admin', 'manager'] %}
           <td style="white-space:nowrap;">
             <a href="{{ url_for('ops_client_edit', client_id=c.client_id) }}" class="btn btn-sm btn-outline">Edit</a>
             <form method="post" action="{{ url_for('ops_client_delete', client_id=c.client_id) }}" style="display:inline;"
@@ -76,8 +76,8 @@
       </tbody>
     </table>
   </div>
-  {% if session.get('role') != 'admin' %}
-  <p style="color:var(--muted);font-size:0.85rem;margin-top:0.75rem;">Only admins can edit or delete clients.</p>
+  {% if session.get('role') not in ['admin', 'manager'] %}
+  <p style="color:var(--muted);font-size:0.85rem;margin-top:0.75rem;">Only Managers and Admins can edit or delete clients.</p>
   {% endif %}
 </div>
 {% endblock %}

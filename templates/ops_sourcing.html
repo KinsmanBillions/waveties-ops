@@ -58,7 +58,7 @@
           <td><span class="pill">{{ s.status }}</span></td>
           <td>{{ s.qc_status }}</td>
           <td>
-            {% if session.get('role') == 'admin' %}
+            {% if session.get('role') in ['admin', 'manager', 'operations'] %}
             <details>
               <summary class="btn btn-sm btn-outline" style="cursor:pointer">Update</summary>
               <form method="post" action="{{ url_for('ops_sourcing_status', sourcing_id=s.sourcing_id) }}" style="padding:0.5rem;min-width:220px">

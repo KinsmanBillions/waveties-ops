@@ -1,5 +1,11 @@
 {
-  "next_invoice_seq": 1,
+  "next_invoice_seq": 2,
   "invoices": {},
-  "customers": {}
+  "customers": {
+    "test@example.com": {
+      "name": "Test Client Intl",
+      "email": "test@example.com",
+      "phone": ""
+    }
+  }
 }

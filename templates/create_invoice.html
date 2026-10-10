@@ -24,8 +24,18 @@
       <div class="form-group">
         <label>Currency</label>
         <select name="currency">
-          <option value="GHS" selected>GHS</option>
-          <option value="USD">USD</option>
+          {% set dc = default_currency if default_currency is defined else 'USD' %}
+          {% if currencies is defined %}
+            {% for c in currencies %}
+            <option value="{{ c }}" {% if c == dc %}selected{% endif %}>{{ c }}</option>
+            {% endfor %}
+          {% else %}
+            <option value="USD" selected>USD</option>
+            <option value="GHS">GHS</option>
+            <option value="EUR">EUR</option>
+            <option value="GBP">GBP</option>
+            <option value="CNY">CNY</option>
+          {% endif %}
         </select>
       </div>
       <div class="form-group">

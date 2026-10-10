@@ -364,21 +364,24 @@
     </div>
 
     <div class="navbar-right">
-      {% if session.get('role') == 'admin' %}
+      {% set r = session.get('role') or '' %}
+      {% if r in ['admin', 'manager', 'accountant'] %}
+      <a href="{{ url_for('admin_treasury') }}" title="Receiving accounts">Accounts</a>
+      {% endif %}
+      {% if r == 'admin' %}
       <div class="nav-dropdown">
         <button type="button" class="nav-dropdown-toggle" aria-haspopup="true">Admin ▾</button>
         <div class="nav-dropdown-menu">
-          <a href="{{ url_for('admin_treasury') }}">Accounts</a>
           <a href="{{ url_for('admin_users') }}">Users</a>
           <a href="{{ url_for('admin_smtp') }}">Email Setup</a>
           <a href="{{ url_for('admin_reset_data') }}">Reset Data</a>
         </div>
       </div>
-      <span class="nav-divider"></span>
       {% endif %}
+      <span class="nav-divider"></span>
       <span class="user-chip">
         {{ session.get('name') }}
-        <span class="badge-role">{{ session.get('role') }}</span>
+        <span class="badge-role">{% if r == 'admin' %}Admin{% elif r == 'manager' %}Manager{% elif r == 'accountant' %}Accountant{% elif r == 'operations' %}Operations{% elif r in ['receptionist','worker'] %}Receptionist{% else %}{{ r|title }}{% endif %}</span>
       </span>
       <a href="{{ url_for('logout') }}">Logout</a>
     </div>

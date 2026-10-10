@@ -7,7 +7,7 @@
   <a href="{{ url_for('admin_users') }}" class="btn btn-outline">← Back</a>
 </div>
 
-<div class="card" style="max-width:480px;">
+<div class="card" style="max-width:520px;">
   <form method="POST">
     {% if not edit_user %}
     <div class="form-group">
@@ -22,11 +22,20 @@
       <input type="text" name="name" value="{{ edit_user.name if edit_user else '' }}" required>
     </div>
     <div class="form-group">
-      <label>Role</label>
-      <select name="role">
-        <option value="worker" {% if edit_user and edit_user.role == 'worker' %}selected{% endif %}>Worker</option>
-        <option value="admin" {% if edit_user and edit_user.role == 'admin' %}selected{% endif %}>Admin</option>
+      <label>Role *</label>
+      <select name="role" required>
+        {% set current = edit_user.role if edit_user else 'receptionist' %}
+        {% for value, label in roles %}
+        <option value="{{ value }}" {% if current == value or (current == 'worker' and value == 'receptionist') %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
       </select>
+      <p style="font-size:0.78rem;color:var(--muted);margin-top:0.35rem;line-height:1.4;">
+        <b>Receptionist</b> — create records only<br>
+        <b>Operations</b> — create + update order/shipment status<br>
+        <b>Accountant</b> — invoices, payments, mark paid, accounts view<br>
+        <b>Manager</b> — edit/delete commercial data + finance<br>
+        <b>Admin</b> — full system (users, email, reset)
+      </p>
     </div>
     <div class="form-group">
       <label>{{ 'New password (leave blank to keep)' if edit_user else 'Password *' }}</label>

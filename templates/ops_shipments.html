@@ -64,7 +64,7 @@
           <td>{{ s.eta or '—' }}</td>
           <td><span class="pill">{{ s.status }}</span></td>
           <td>
-            {% if session.get('role') == 'admin' %}
+            {% if session.get('role') in ['admin', 'manager', 'operations'] %}
             <details>
               <summary class="btn btn-sm btn-outline" style="cursor:pointer">Update</summary>
               <form method="post" action="{{ url_for('ops_shipment_status', shipment_id=s.shipment_id) }}" style="padding:0.5rem">

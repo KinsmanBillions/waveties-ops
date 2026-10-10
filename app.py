@@ -55,6 +55,45 @@ def get_users_db():
     return conn
 
 
+# Role catalogue (value stored in DB → display label)
+ROLES = [
+    ("receptionist", "Receptionist"),
+    ("operations", "Operations"),
+    ("accountant", "Accountant"),
+    ("manager", "Manager"),
+    ("admin", "Admin"),
+]
+ROLE_LABELS = dict(ROLES)
+# Legacy alias: old "worker" accounts behave like receptionist
+ROLE_ALIASES = {"worker": "receptionist"}
+
+# Permission sets
+ADMIN_ROLES = {"admin"}
+MANAGE_ROLES = {"admin", "manager"}           # edit / delete commercial records
+FINANCE_ROLES = {"admin", "manager", "accountant"}  # mark paid, payments, accounts view
+OPS_STATUS_ROLES = {"admin", "manager", "operations"}  # update order/shipment status
+CREATE_ROLES = {"admin", "manager", "accountant", "operations", "receptionist", "worker"}
+
+
+def normalize_role(role):
+    r = (role or "receptionist").strip().lower()
+    return ROLE_ALIASES.get(r, r)
+
+
+def role_label(role):
+    r = normalize_role(role)
+    return ROLE_LABELS.get(r, r.title())
+
+
+def user_can(session_or_role, *allowed):
+    """Check if current role is in the allowed set (after alias normalize)."""
+    if isinstance(session_or_role, dict):
+        role = session_or_role.get("role")
+    else:
+        role = session_or_role
+    return normalize_role(role) in {normalize_role(a) for a in allowed}
+
+
 def init_users_db():
     conn = get_users_db()
     conn.execute("""
@@ -63,19 +102,27 @@ def init_users_db():
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             name TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'worker',
+            role TEXT NOT NULL DEFAULT 'receptionist',
             active INTEGER NOT NULL DEFAULT 1,
             created_at TEXT
         )
     """)
     conn.commit()
+    # Migrate legacy "worker" → "receptionist"
+    try:
+        conn.execute("UPDATE users SET role='receptionist' WHERE role='worker'")
+        conn.commit()
+    except Exception:
+        pass
     # Seed default users if empty
     cur = conn.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
         defaults = [
             ("admin", "admin123", "System Admin", "admin"),
-            ("worker", "worker123", "Invoice Worker", "worker"),
-            ("kofi", "kofi123", "Kofi Mensah", "worker"),
+            ("manager", "manager123", "Operations Manager", "manager"),
+            ("accountant", "account123", "Accounts Officer", "accountant"),
+            ("ops", "ops123", "Operations Officer", "operations"),
+            ("reception", "reception123", "Front Desk", "receptionist"),
         ]
         for u, p, n, r in defaults:
             conn.execute(
@@ -117,10 +164,44 @@ def login_required(f):
 
 
 def admin_required(f):
+    """Strict Admin only (Users, SMTP, Reset Data)."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if session.get("role") != "admin":
+        if normalize_role(session.get("role")) not in ADMIN_ROLES:
             flash("Admin access required.", "danger")
+            return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def manage_required(f):
+    """Admin or Manager — edit/delete commercial records."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if normalize_role(session.get("role")) not in MANAGE_ROLES:
+            flash("Manager or Admin access required.", "danger")
+            return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def finance_required(f):
+    """Admin, Manager, or Accountant — payments / mark paid / accounts."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if normalize_role(session.get("role")) not in FINANCE_ROLES:
+            flash("Finance access required (Accountant, Manager, or Admin).", "danger")
+            return redirect(url_for("dashboard"))
+        return f(*args, **kwargs)
+    return decorated
+
+
+def ops_status_required(f):
+    """Admin, Manager, or Operations — update order/shipment/sourcing status."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if normalize_role(session.get("role")) not in OPS_STATUS_ROLES:
+            flash("Operations access required.", "danger")
             return redirect(url_for("dashboard"))
         return f(*args, **kwargs)
     return decorated
@@ -144,7 +225,7 @@ def login():
         user = get_user(username)
         if user and check_password_hash(user["password_hash"], password):
             session["username"] = user["username"]
-            session["role"] = user["role"]
+            session["role"] = normalize_role(user["role"])
             session["name"] = user["name"]
             flash(f"Welcome back, {user['name']}!", "success")
             return redirect(url_for("dashboard"))
@@ -266,7 +347,7 @@ def create_invoice_page():
             customer_name = request.form.get("customer_name", "").strip()
             customer_email = request.form.get("customer_email", "").strip()
             customer_phone = request.form.get("customer_phone", "").strip()
-            currency = request.form.get("currency", "GHS")
+            currency = request.form.get("currency", "USD")
             tax = float(request.form.get("tax", 0) or 0)
             paid = float(request.form.get("paid", 0) or 0)
             due_days = int(request.form.get("due_days", 30) or 30)
@@ -304,6 +385,15 @@ def create_invoice_page():
 
             inv_date = datetime.now()
             due_date = inv_date + timedelta(days=due_days)
+            ra = load_receiving_accounts()
+            momo_provider = (request.form.get("momo_provider") or "").strip()
+            if not momo_provider:
+                momo_provider = ra.get("momo_provider") or "TELECEL CASH"
+            momo_val = (request.form.get("momo") or "").strip() or ra.get("momo") or COMPANY.get("momo", "")
+            bank_src = request.form.get("bank_details")
+            if bank_src is None or not str(bank_src).strip():
+                bank_src = "\n".join(ra.get("bank_lines") or COMPANY.get("bank_lines", []))
+            currency = (currency or "USD").strip().upper()
             data = {
                 "customer_name": customer_name,
                 "customer_email": customer_email,
@@ -314,14 +404,14 @@ def create_invoice_page():
                 "tax": tax,
                 "paid": paid,
                 "items": items,
-                "momo": request.form.get("momo") or COMPANY.get("momo"),
-                "momo_provider": request.form.get("momo_provider") or "TELECEL CASH",
+                "momo": momo_val,
+                "momo_provider": momo_provider,
                 "bank_lines": [
                     line.strip()
-                    for line in (request.form.get("bank_details") or "\n".join(COMPANY.get("bank_lines", []))).splitlines()
+                    for line in str(bank_src).splitlines()
                     if line.strip()
                 ],
-                "contact_phone": request.form.get("contact_phone") or COMPANY.get("phone"),
+                "contact_phone": (request.form.get("contact_phone") or "").strip() or ra.get("contact_phone") or COMPANY.get("phone"),
             }
             inv_no = create_invoice(data, created_by=session.get("username", "worker"))
             flash(f"Invoice {inv_no} created successfully!", "success")
@@ -340,6 +430,8 @@ def create_invoice_page():
         default_bank="\n".join(ra.get("bank_lines") or COMPANY.get("bank_lines", [])),
         default_phone=ra.get("contact_phone") or COMPANY.get("phone", ""),
         default_momo_provider=ra.get("momo_provider") or "TELECEL CASH",
+        currencies=CURRENCIES,
+        default_currency=ra.get("preferred_currency") or "USD",
     )
 
 
@@ -393,7 +485,7 @@ def regenerate_pdf(invoice_no):
 
 @app.route("/invoices/<path:invoice_no>/delete", methods=["POST"])
 @login_required
-@admin_required
+@manage_required
 def delete_invoice(invoice_no):
     db = load_db()
     inv = db.get("invoices", {}).pop(invoice_no, None)
@@ -423,7 +515,7 @@ def delete_invoice(invoice_no):
 # ── Mark as Paid ──────────────────────────────────────────────
 @app.route("/invoices/<path:invoice_no>/pay", methods=["GET", "POST"])
 @login_required
-@admin_required
+@finance_required
 def mark_paid(invoice_no):
     db = load_db()
     inv = db["invoices"].get(invoice_no)
@@ -590,7 +682,7 @@ def customer_new():
 
 @app.route("/customers/<path:key>/edit", methods=["GET", "POST"])
 @login_required
-@admin_required
+@manage_required
 def customer_edit(key):
     db = load_db()
     customer = db.get("customers", {}).get(key)
@@ -616,7 +708,7 @@ def customer_edit(key):
 
 @app.route("/customers/<path:key>/delete", methods=["POST"])
 @login_required
-@admin_required
+@manage_required
 def customer_delete(key):
     db = load_db()
     if key in db.get("customers", {}):
@@ -646,6 +738,7 @@ def load_receiving_accounts():
         "contact_phone": COMPANY.get("phone", ""),
         "billing_email": COMPANY.get("email", ""),
         "internal_notes": "",
+        "preferred_currency": "USD",
     }
     if RECEIVING_ACCOUNTS_FILE.exists():
         try:
@@ -666,7 +759,7 @@ def save_receiving_accounts(data):
 
 @app.route("/admin/accounts", methods=["GET", "POST"])
 @login_required
-@admin_required
+@finance_required
 def admin_treasury():
     if request.method == "POST":
         bank_lines = [
@@ -681,6 +774,7 @@ def admin_treasury():
             "contact_phone": request.form.get("contact_phone", "").strip(),
             "billing_email": request.form.get("billing_email", "").strip(),
             "internal_notes": request.form.get("internal_notes", "").strip(),
+            "preferred_currency": (request.form.get("preferred_currency") or "USD").strip().upper(),
         }
         save_receiving_accounts(data)
         # Keep invoice defaults in sync for new invoices
@@ -723,10 +817,15 @@ def admin_treasury():
     payment_rows.sort(key=lambda r: r["at"], reverse=True)
     payment_rows = payment_rows[:50]
 
-    # Primary currency from latest invoices or GHS
-    currency = "GHS"
-    if invoices:
-        currency = list(invoices.values())[-1].get("currency") or "GHS"
+    # Preferred display currency + per-currency breakdown
+    preferred = accounts.get("preferred_currency") or "USD"
+    by_currency = {}
+    for inv in invoices.values():
+        cur = (inv.get("currency") or preferred).upper()
+        entry = by_currency.setdefault(cur, {"paid": 0.0, "outstanding": 0.0, "invoiced": 0.0})
+        entry["paid"] += float(inv.get("paid") or 0)
+        entry["outstanding"] += max(0.0, float(inv.get("balance_due") or 0))
+        entry["invoiced"] += float(inv.get("total") or 0)
 
     return render_template(
         "admin_treasury.html",
@@ -739,7 +838,9 @@ def admin_treasury():
             "ops_in": ops_in,
         },
         payment_rows=payment_rows,
-        currency=currency,
+        currency=preferred,
+        by_currency=by_currency,
+        currencies=CURRENCIES,
         company=COMPANY,
         user=session,
     )
@@ -796,7 +897,7 @@ def admin_reset_data():
 @login_required
 @admin_required
 def admin_users():
-    return render_template("admin_users.html", users=list_users(), company=COMPANY, user=session)
+    return render_template("admin_users.html", users=list_users(), company=COMPANY, user=session, role_labels=ROLE_LABELS)
 
 
 @app.route("/admin/users/new", methods=["GET", "POST"])
@@ -807,7 +908,7 @@ def admin_user_new():
         username = request.form.get("username", "").strip().lower()
         password = request.form.get("password", "")
         name = request.form.get("name", "").strip()
-        role = request.form.get("role", "worker")
+        role = normalize_role(request.form.get("role", "receptionist"))
         if not username or not password or not name:
             flash("All fields are required.", "danger")
             return redirect(url_for("admin_user_new"))
@@ -823,7 +924,7 @@ def admin_user_new():
         conn.close()
         flash(f"User {username} created.", "success")
         return redirect(url_for("admin_users"))
-    return render_template("admin_user_form.html", edit_user=None, company=COMPANY, user=session)
+    return render_template("admin_user_form.html", edit_user=None, company=COMPANY, user=session, roles=ROLES)
 
 
 @app.route("/admin/users/<int:uid>/edit", methods=["GET", "POST"])
@@ -839,7 +940,7 @@ def admin_user_edit(uid):
     edit_user = dict(row)
     if request.method == "POST":
         name = request.form.get("name", "").strip()
-        role = request.form.get("role", "worker")
+        role = normalize_role(request.form.get("role", "receptionist"))
         password = request.form.get("password", "")
         active = 1 if request.form.get("active") else 0
         if password:
@@ -854,7 +955,7 @@ def admin_user_edit(uid):
         flash("User updated.", "success")
         return redirect(url_for("admin_users"))
     conn.close()
-    return render_template("admin_user_form.html", edit_user=edit_user, company=COMPANY, user=session)
+    return render_template("admin_user_form.html", edit_user=edit_user, company=COMPANY, user=session, roles=ROLES)
 
 
 @app.route("/admin/smtp", methods=["GET", "POST"])
@@ -937,7 +1038,7 @@ def ops_client_new():
 
 @app.route("/ops/clients/<client_id>/edit", methods=["GET", "POST"])
 @login_required
-@admin_required
+@manage_required
 def ops_client_edit(client_id):
     client = ops.get_one("clients", "client_id", client_id)
     if not client:
@@ -976,7 +1077,7 @@ def ops_client_edit(client_id):
 
 @app.route("/ops/clients/<client_id>/delete", methods=["POST"])
 @login_required
-@admin_required
+@manage_required
 def ops_client_delete(client_id):
     client = ops.get_one("clients", "client_id", client_id)
     if not client:
@@ -1043,7 +1144,7 @@ def ops_order_new():
 
 @app.route("/ops/orders/<order_id>/delete", methods=["POST"])
 @login_required
-@admin_required
+@manage_required
 def ops_order_delete(order_id):
     order = ops.get_one("orders", "order_id", order_id)
     if not order:
@@ -1056,7 +1157,7 @@ def ops_order_delete(order_id):
 
 @app.route("/ops/orders/<order_id>/status", methods=["POST"])
 @login_required
-@admin_required
+@ops_status_required
 def ops_order_status(order_id):
     order = ops.get_one("orders", "order_id", order_id)
     if not order:
@@ -1087,13 +1188,22 @@ def ops_order_to_invoice(order_id):
             due_days = int(request.form.get("due_days", 30) or 30)
             due_date = inv_date + timedelta(days=due_days)
             amount = float(request.form.get("amount", order.get("order_value") or 0) or 0)
+            ra = load_receiving_accounts()
+            momo_provider = (request.form.get("momo_provider") or "").strip()
+            if not momo_provider:
+                momo_provider = ra.get("momo_provider") or "TELECEL CASH"
+            momo_val = (request.form.get("momo") or "").strip() or ra.get("momo") or COMPANY.get("momo", "")
+            bank_src = request.form.get("bank_details")
+            if bank_src is None or not str(bank_src).strip():
+                bank_src = "\n".join(ra.get("bank_lines") or COMPANY.get("bank_lines", []))
+            currency = (request.form.get("currency") or order.get("currency") or "USD").strip().upper()
             data = {
                 "customer_name": client.get("company_name") or order["client_id"],
                 "customer_email": client.get("email") or "",
                 "customer_phone": client.get("phone") or "",
                 "invoice_date": inv_date.strftime("%b %d, %Y"),
                 "due_date": due_date.strftime("%b %d, %Y"),
-                "currency": request.form.get("currency") or order.get("currency") or "USD",
+                "currency": currency,
                 "tax": float(request.form.get("tax", 0) or 0),
                 "paid": float(request.form.get("paid", 0) or 0),
                 "items": [{
@@ -1108,30 +1218,33 @@ def ops_order_to_invoice(order_id):
                     "order_number": order_id,
                     "amount": amount,
                 }],
-                "momo": request.form.get("momo") or COMPANY.get("momo"),
-                "momo_provider": request.form.get("momo_provider") or "TELECEL CASH",
+                "momo": momo_val,
+                "momo_provider": momo_provider,
                 "bank_lines": [
                     line.strip()
-                    for line in (request.form.get("bank_details") or "\n".join(COMPANY.get("bank_lines", []))).splitlines()
+                    for line in str(bank_src).splitlines()
                     if line.strip()
                 ],
-                "contact_phone": COMPANY.get("phone"),
+                "contact_phone": ra.get("contact_phone") or COMPANY.get("phone"),
             }
             inv_no = create_invoice(data, created_by=session.get("username", "worker"))
             ops.update("orders", "order_id", order_id, {
                 "invoice_no": inv_no,
                 "last_updated": datetime.now().strftime("%Y-%m-%d"),
             })
-            flash(f"Invoice {inv_no} created from order {order_id}.", "success")
+            flash(f"Invoice {inv_no} created from order {order_id} ({momo_provider}).", "success")
             return redirect(url_for("view_invoice", invoice_no=inv_no))
         except Exception as e:
             flash(f"Error: {e}", "danger")
             return redirect(url_for("ops_order_to_invoice", order_id=order_id))
+    ra = load_receiving_accounts()
     return render_template(
         "ops_order_invoice.html",
         order=order, client=client, company=COMPANY, user=session,
-        default_momo=COMPANY.get("momo", ""),
-        default_bank="\n".join(COMPANY.get("bank_lines", [])),
+        default_momo=ra.get("momo") or COMPANY.get("momo", ""),
+        default_bank="\n".join(ra.get("bank_lines") or COMPANY.get("bank_lines", [])),
+        default_momo_provider=ra.get("momo_provider") or "TELECEL CASH",
+        currencies=CURRENCIES,
     )
 
 
@@ -1210,7 +1323,7 @@ def ops_shipment_new():
 
 @app.route("/ops/shipments/<shipment_id>/status", methods=["POST"])
 @login_required
-@admin_required
+@ops_status_required
 def ops_shipment_status(shipment_id):
     ship = ops.get_one("shipments", "shipment_id", shipment_id)
     if not ship:
@@ -1256,7 +1369,7 @@ def ops_rmb():
 
 @app.route("/ops/rmb/rate", methods=["POST"])
 @login_required
-@admin_required
+@manage_required
 def ops_rmb_rate():
     currency = (request.form.get("currency") or "USD").strip().upper()
     rate = float(request.form.get("rate", 0) or 0)
@@ -1350,7 +1463,7 @@ def ops_sourcing_new():
 
 @app.route("/ops/sourcing/<sourcing_id>/status", methods=["POST"])
 @login_required
-@admin_required
+@ops_status_required
 def ops_sourcing_status(sourcing_id):
     item = ops.get_one("sourcing", "sourcing_id", sourcing_id)
     if not item:

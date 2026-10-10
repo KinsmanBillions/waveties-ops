@@ -45,7 +45,7 @@ COMPANY = {
     ],
 }
 
-DEFAULT_CURRENCY = "GHS"
+DEFAULT_CURRENCY = "USD"
 
 
 class ColoredBox(Flowable):
@@ -334,8 +334,8 @@ def build_notes_and_totals(styles, data):
     paid = data.get("paid", 0)
     balance = data.get("balance_due", total - paid)
 
-    momo = data.get("momo") or COMPANY.get("momo", "")
-    momo_provider = data.get("momo_provider") or "TELECEL CASH"
+    momo = (data.get("momo") or "").strip() or COMPANY.get("momo", "")
+    momo_provider = (data.get("momo_provider") or "").strip() or "TELECEL CASH"
     bank_lines = data.get("bank_lines") or COMPANY.get("bank_lines", [])
     if isinstance(bank_lines, str):
         bank_lines = [bank_lines]

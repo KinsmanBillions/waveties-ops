@@ -74,11 +74,13 @@
           </td>
           <td style="white-space:nowrap">
             <a class="btn btn-sm" href="{{ url_for('ops_order_to_invoice', order_id=o.order_id) }}">Invoice</a>
-            {% if session.get('role') == 'admin' %}
+            {% if session.get('role') in ['admin', 'manager'] %}
             <form method="post" action="{{ url_for('ops_order_delete', order_id=o.order_id) }}" style="display:inline;"
                   onsubmit="return confirm('Delete order {{ o.order_id }}?');">
               <button type="submit" class="btn btn-sm btn-outline" style="color:var(--danger);">Delete</button>
             </form>
+            {% endif %}
+            {% if session.get('role') in ['admin', 'manager', 'operations'] %}
             <details style="display:inline">
               <summary class="btn btn-sm btn-outline" style="cursor:pointer">Status</summary>
               <form method="post" action="{{ url_for('ops_order_status', order_id=o.order_id) }}" style="padding:0.5rem;min-width:200px">

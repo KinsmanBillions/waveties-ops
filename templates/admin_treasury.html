@@ -12,15 +12,15 @@
 
 <div class="stats-grid">
   <div class="stat-card" style="border-left-color:#10B981;">
-    <div class="label">Total Received (Invoices)</div>
+    <div class="label">Total Received (all currencies, sum)</div>
     <div class="value" style="font-size:1.35rem;">{{ currency }} {{ "%.2f"|format(totals.invoice_paid) }}</div>
   </div>
   <div class="stat-card" style="border-left-color:#F59E0B;">
-    <div class="label">Outstanding (Unpaid)</div>
+    <div class="label">Outstanding (all currencies, sum)</div>
     <div class="value" style="font-size:1.35rem;">{{ currency }} {{ "%.2f"|format(totals.outstanding) }}</div>
   </div>
   <div class="stat-card" style="border-left-color:#0A2540;">
-    <div class="label">Invoiced Total</div>
+    <div class="label">Invoiced Total (all currencies, sum)</div>
     <div class="value" style="font-size:1.35rem;">{{ currency }} {{ "%.2f"|format(totals.invoiced) }}</div>
   </div>
   <div class="stat-card" style="border-left-color:#00B4D8;">
@@ -28,6 +28,29 @@
     <div class="value" style="font-size:1.35rem;">${{ "%.2f"|format(totals.ops_in) }}</div>
   </div>
 </div>
+
+{% if by_currency %}
+<div class="card">
+  <div class="card-title">Totals by Currency</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Currency</th><th>Invoiced</th><th>Received</th><th>Outstanding</th></tr>
+      </thead>
+      <tbody>
+        {% for cur, vals in by_currency.items() %}
+        <tr>
+          <td><strong>{{ cur }}</strong></td>
+          <td>{{ cur }} {{ "%.2f"|format(vals.invoiced) }}</td>
+          <td>{{ cur }} {{ "%.2f"|format(vals.paid) }}</td>
+          <td>{{ cur }} {{ "%.2f"|format(vals.outstanding) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
 
 <div class="card">
   <div class="card-title">Account Details</div>
@@ -44,6 +67,15 @@
       <div class="form-group">
         <label>Mobile Money Account (Name – Number)</label>
         <input type="text" name="momo" value="{{ accounts.momo }}" required>
+      </div>
+      <div class="form-group">
+        <label>Preferred Invoice / Display Currency</label>
+        <select name="preferred_currency">
+          {% set pc = accounts.preferred_currency or 'USD' %}
+          {% for c in currencies %}
+          <option value="{{ c }}" {% if c == pc %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
       </div>
     </div>
     <div class="form-group">
