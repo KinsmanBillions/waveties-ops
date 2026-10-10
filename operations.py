@@ -144,6 +144,13 @@ def init_ops_db():
             value TEXT
         )""")
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('rmb_rate', '7.14')")
+        c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('rmb_rates_json', '{}')")
+        # Migration: base currency for multi-currency RMB desk
+        cols = [r[1] for r in c.execute("PRAGMA table_info(rmb_txns)").fetchall()]
+        if "base_currency" not in cols:
+            c.execute("ALTER TABLE rmb_txns ADD COLUMN base_currency TEXT DEFAULT 'USD'")
+        if "base_amount" not in cols:
+            c.execute("ALTER TABLE rmb_txns ADD COLUMN base_amount REAL DEFAULT 0")
 
         if c.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 0:
             _seed(c)
@@ -285,3 +292,29 @@ def ops_kpis():
             "total_rev": rev, "receivables": recv, "total_in": pin, "total_out": pout,
             "net": pin - pout, "active_clients": clients,
         }
+
+
+def get_rmb_rates():
+    """Return dict of base_currency -> CNY per 1 unit of base currency."""
+    import json
+    raw = get_setting("rmb_rates_json", "{}")
+    try:
+        rates = json.loads(raw) if raw else {}
+    except Exception:
+        rates = {}
+    # Seed USD from legacy single rate if missing
+    if "USD" not in rates:
+        try:
+            rates["USD"] = float(get_setting("rmb_rate", "7.14"))
+        except Exception:
+            rates["USD"] = 7.14
+    return rates
+
+
+def set_rmb_rate_for(currency, rate):
+    import json
+    rates = get_rmb_rates()
+    rates[currency] = float(rate)
+    set_setting("rmb_rates_json", json.dumps(rates))
+    if currency == "USD":
+        set_setting("rmb_rate", str(rate))

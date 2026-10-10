@@ -810,7 +810,7 @@ ORDER_STATUSES = ["Inquiry", "Confirmed", "Payment Pending", "Paid / Processing"
                   "In Transit", "Delivered", "Closed", "Cancelled", "On Hold"]
 SERVICE_TYPES = ["SHIP", "SRC", "BFM", "RMB", "PAY", "VAL", "COMBO"]
 PAY_STATUSES = ["Unpaid", "Partial", "Paid", "Refunded", "Waived"]
-CURRENCIES = ["USD", "CNY", "NGN", "GHS", "KES", "TZS", "EUR", "GBP"]
+CURRENCIES = ["USD", "EUR", "GBP", "CNY", "JPY", "CHF", "CAD", "AUD", "NZD", "INR", "AED", "SAR", "QAR", "KWD", "BHD", "OMR", "SGD", "HKD", "KRW", "TWD", "THB", "MYR", "IDR", "PHP", "VND", "TRY", "RUB", "BRL", "MXN", "ARS", "CLP", "COP", "PEN", "EGP", "MAD", "TND", "DZD", "LYD", "SDG", "SSP", "NGN", "GHS", "XOF", "GMD", "SLL", "LRD", "GNF", "CVE", "MRU", "XAF", "CDF", "AOA", "STN", "KES", "TZS", "UGX", "RWF", "BIF", "ETB", "SOS", "DJF", "ERN", "SCR", "KMF", "MGA", "MUR", "ZAR", "BWP", "NAD", "ZMW", "MWK", "MZN", "SZL", "LSL", "ZWL"]
 INCOTERMS = ["EXW", "FCA", "FOB", "CFR", "CIF", "CPT", "CIP", "DAP", "DPU", "DDP", "—"]
 CLIENT_TYPES = ["Importer", "Exporter", "Distributor", "SME", "Corporate", "Sourcing Agent", "Other"]
 SHIP_MODES = ["Sea FCL", "Sea LCL", "Air", "Road", "Rail", "Multimodal"]
@@ -1143,29 +1143,60 @@ def ops_shipment_status(shipment_id):
 @login_required
 def ops_rmb():
     txns = ops.get_all("rmb_txns", order_by="txn_date DESC")
-    rate = float(ops.get_setting("rmb_rate", "7.14"))
+    rates = ops.get_rmb_rates()
+    usd_rate = float(rates.get("USD") or ops.get_setting("rmb_rate", "7.14"))
     orders = ops.order_list()
     clients = ops.client_list()
-    return render_template("ops_rmb.html", txns=txns, rate=rate, orders=orders,
-                           clients=clients, company=COMPANY, user=session,
-                           rmb_types=RMB_TYPES)
+    # Currencies for rate desk exclude CNY as base (rate is always vs CNY)
+    rate_currencies = [c for c in CURRENCIES if c != "CNY"]
+    return render_template(
+        "ops_rmb.html",
+        txns=txns,
+        rates=rates,
+        rate=usd_rate,
+        orders=orders,
+        clients=clients,
+        company=COMPANY,
+        user=session,
+        rmb_types=RMB_TYPES,
+        currencies=rate_currencies,
+        all_rates=sorted(rates.items()),
+    )
 
 
 @app.route("/ops/rmb/rate", methods=["POST"])
 @login_required
 @admin_required
 def ops_rmb_rate():
-    ops.set_setting("rmb_rate", request.form.get("rate", "7.14"))
-    flash("RMB rate updated.", "success")
+    currency = (request.form.get("currency") or "USD").strip().upper()
+    rate = float(request.form.get("rate", 0) or 0)
+    if rate <= 0:
+        flash("Rate must be greater than zero.", "danger")
+        return redirect(url_for("ops_rmb"))
+    ops.set_rmb_rate_for(currency, rate)
+    flash(f"Reference rate updated: 1 {currency} = {rate} CNY.", "success")
     return redirect(url_for("ops_rmb"))
 
 
 @app.route("/ops/rmb/new", methods=["POST"])
 @login_required
 def ops_rmb_new():
-    rate = float(request.form.get("rate_used") or ops.get_setting("rmb_rate", "7.14"))
+    base_currency = (request.form.get("base_currency") or "USD").strip().upper()
+    rates = ops.get_rmb_rates()
+    default_rate = float(rates.get(base_currency) or rates.get("USD") or 7.14)
+    rate = float(request.form.get("rate_used") or default_rate)
     cny = float(request.form.get("cny_amount", 0) or 0)
-    usd = round(cny / rate, 2) if rate else 0
+    # base_amount = how much of base currency equals this CNY at rate (CNY per 1 base)
+    base_amount = round(cny / rate, 2) if rate else 0
+    # Keep usd_amount for legacy dashboard: convert via USD rate if possible
+    usd_rate = float(rates.get("USD") or 7.14)
+    if base_currency == "USD":
+        usd_amount = base_amount
+    elif usd_rate:
+        # cny/usd_rate = USD equivalent of the CNY leg
+        usd_amount = round(cny / usd_rate, 2) if usd_rate else 0
+    else:
+        usd_amount = 0
     tid = ops.next_id("RMB", "rmb_txns", "txn_id")
     ops.insert("rmb_txns", {
         "txn_id": tid,
@@ -1174,15 +1205,17 @@ def ops_rmb_new():
         "client_id": request.form.get("client_id", ""),
         "txn_type": request.form.get("txn_type", "Client Exchange"),
         "cny_amount": cny,
-        "usd_amount": usd,
+        "usd_amount": usd_amount,
         "rate_used": rate,
+        "base_currency": base_currency,
+        "base_amount": base_amount,
         "direction": request.form.get("direction", ""),
         "counterparty": request.form.get("counterparty", ""),
         "channel": request.form.get("channel", ""),
         "status": request.form.get("status", "Pending"),
         "notes": request.form.get("notes", ""),
     })
-    flash(f"RMB transaction {tid} recorded.", "success")
+    flash(f"RMB transaction {tid} recorded ({base_amount} {base_currency} → {cny} CNY @ {rate}).", "success")
     return redirect(url_for("ops_rmb"))
 
 

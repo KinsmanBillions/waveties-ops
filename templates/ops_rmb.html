@@ -4,24 +4,51 @@
 <div class="page-header"><h1>RMB Exchange & Supplier Payment Desk</h1></div>
 
 <div class="card">
-  <div class="card-title">Reference Rate (CNY per 1 USD)</div>
+  <div class="card-title">Reference Rates (CNY per 1 unit of currency)</div>
+  <p style="color:var(--muted);font-size:0.9rem;margin-bottom:0.75rem;">
+    Rate means how many Chinese Yuan (CNY) equal <strong>1 unit</strong> of the selected currency.
+    Example: if 1 USD = 7.14 CNY, enter <strong>7.14</strong> for USD.
+  </p>
   {% if session.get('role') == 'admin' %}
-  <form method="post" action="{{ url_for('ops_rmb_rate') }}" style="display:flex;gap:1rem;align-items:end">
-    <div class="form-group" style="margin:0">
-      <label>Rate</label>
-      <input type="number" step="0.0001" name="rate" value="{{ rate }}" style="width:140px">
+  <form method="post" action="{{ url_for('ops_rmb_rate') }}">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Currency</label>
+        <select name="currency">
+          {% for c in currencies %}
+          <option value="{{ c }}" {% if c == 'USD' %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>CNY per 1 unit</label>
+        <input type="number" step="0.0001" name="rate" value="{{ rate }}" required>
+      </div>
+      <div class="form-group" style="display:flex;align-items:end;">
+        <button type="submit" class="btn btn-primary">Save Rate</button>
+      </div>
     </div>
-    <button type="submit" class="btn btn-primary">Update Rate</button>
   </form>
+  {% endif %}
+  {% if all_rates %}
+  <div class="table-wrap" style="margin-top:1rem;">
+    <table>
+      <thead><tr><th>Currency</th><th>CNY per 1 unit</th></tr></thead>
+      <tbody>
+        {% for cur, r in all_rates %}
+        <tr><td><strong>{{ cur }}</strong></td><td>{{ r }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% else %}
-  <p style="font-size:1.25rem;font-weight:700;color:var(--navy);">{{ rate }}</p>
-  <p style="color:var(--muted);font-size:0.85rem;">Only admins can change the reference rate.</p>
+  <p style="color:var(--muted);">No rates saved yet. Admin can add USD, GHS, NGN, etc.</p>
   {% endif %}
 </div>
 
 <div class="card">
   <div class="card-title">New RMB Transaction</div>
-  <form method="post" action="{{ url_for('ops_rmb_new') }}">
+  <form method="post" action="{{ url_for('ops_rmb_new') }}" id="rmbForm">
     <div class="form-row">
       <div class="form-group"><label>Order ID</label>
         <select name="order_id">
@@ -41,19 +68,35 @@
       <div class="form-group"><label>Type</label>
         <select name="txn_type">{% for t in rmb_types %}<option>{{ t }}</option>{% endfor %}</select>
       </div>
-      <div class="form-group"><label>CNY Amount</label><input type="number" step="0.01" name="cny_amount" value="0"></div>
-      <div class="form-group"><label>Rate Used</label><input type="number" step="0.0001" name="rate_used" value="{{ rate }}"></div>
+      <div class="form-group"><label>Base Currency (client pays in)</label>
+        <select name="base_currency" id="baseCurrency">
+          {% for c in currencies %}
+          <option value="{{ c }}" {% if c == 'USD' %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Rate Used (CNY per 1 base)</label>
+        <input type="number" step="0.0001" name="rate_used" id="rateUsed" value="{{ rate }}" required>
+      </div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Counterparty / Supplier</label><input name="counterparty"></div>
-      <div class="form-group"><label>Channel</label><input name="channel" value="Bank Transfer"></div>
+      <div class="form-group"><label>CNY Amount</label>
+        <input type="number" step="0.01" name="cny_amount" id="cnyAmount" value="0" required>
+      </div>
+      <div class="form-group"><label>Base Amount (auto)</label>
+        <input type="text" id="baseAmountPreview" readonly placeholder="Calculated" style="background:#F0F9FF;">
+      </div>
       <div class="form-group"><label>Status</label>
         <select name="status">
           <option>Pending</option><option>Processing</option><option>Completed</option><option>Failed</option><option>Cancelled</option>
         </select>
       </div>
     </div>
-    <div class="form-group"><label>Notes</label><input name="notes"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Counterparty / Supplier</label><input name="counterparty"></div>
+      <div class="form-group"><label>Channel</label><input name="channel" value="Bank Transfer"></div>
+      <div class="form-group"><label>Notes</label><input name="notes"></div>
+    </div>
     <button type="submit" class="btn btn-primary">Record Transaction</button>
   </form>
 </div>
@@ -63,7 +106,11 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>ID</th><th>Date</th><th>Order</th><th>Type</th><th>CNY</th><th>USD</th><th>Rate</th><th>Counterparty</th><th>Status</th></tr>
+        <tr>
+          <th>ID</th><th>Date</th><th>Order</th><th>Type</th>
+          <th>CNY</th><th>Base</th><th>Rate</th><th>USD eq.</th>
+          <th>Counterparty</th><th>Status</th>
+        </tr>
       </thead>
       <tbody>
         {% for t in txns %}
@@ -73,16 +120,43 @@
           <td>{{ t.order_id or '—' }}</td>
           <td>{{ t.txn_type }}</td>
           <td>¥{{ "%.2f"|format(t.cny_amount or 0) }}</td>
-          <td>${{ "%.2f"|format(t.usd_amount or 0) }}</td>
+          <td>{{ "%.2f"|format(t.base_amount or 0) }} {{ t.base_currency or 'USD' }}</td>
           <td>{{ t.rate_used }}</td>
+          <td>${{ "%.2f"|format(t.usd_amount or 0) }}</td>
           <td>{{ t.counterparty or '—' }}</td>
           <td><span class="pill">{{ t.status }}</span></td>
         </tr>
         {% else %}
-        <tr><td colspan="9" style="text-align:center;color:var(--muted)">No RMB transactions yet.</td></tr>
+        <tr><td colspan="10" style="text-align:center;color:var(--muted)">No RMB transactions yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+
+<script>
+const rates = {{ rates | tojson }};
+const baseSel = document.getElementById('baseCurrency');
+const rateInput = document.getElementById('rateUsed');
+const cnyInput = document.getElementById('cnyAmount');
+const preview = document.getElementById('baseAmountPreview');
+
+function syncRateFromCurrency() {
+  const cur = baseSel.value;
+  if (rates[cur] != null) {
+    rateInput.value = rates[cur];
+  }
+  updatePreview();
+}
+function updatePreview() {
+  const rate = parseFloat(rateInput.value) || 0;
+  const cny = parseFloat(cnyInput.value) || 0;
+  const base = rate ? (cny / rate) : 0;
+  preview.value = base ? (base.toFixed(2) + ' ' + baseSel.value) : '';
+}
+baseSel.addEventListener('change', syncRateFromCurrency);
+rateInput.addEventListener('input', updatePreview);
+cnyInput.addEventListener('input', updatePreview);
+syncRateFromCurrency();
+</script>
 {% endblock %}
