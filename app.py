@@ -75,6 +75,13 @@ OPS_STATUS_ROLES = {"admin", "manager", "operations"}  # update order/shipment s
 CREATE_ROLES = {"admin", "manager", "accountant", "operations", "receptionist", "worker"}
 
 
+
+def form_order_id():
+    """Prefer manual Order ID if typed, else dropdown selection."""
+    manual = (request.form.get("order_id_manual") or "").strip()
+    selected = (request.form.get("order_id") or "").strip()
+    return manual or selected
+
 def normalize_role(role):
     r = (role or "receptionist").strip().lower()
     return ROLE_ALIASES.get(r, r)
@@ -1140,7 +1147,15 @@ def ops_order_new():
     if not desc or not client_id:
         flash("Client and description are required.", "danger")
         return redirect(url_for("ops_orders"))
-    oid = ops.next_id("ORD", "orders", "order_id")
+    custom_oid = (request.form.get("order_id_custom") or "").strip().upper()
+    if custom_oid:
+        existing = ops.get_one("orders", "order_id", custom_oid)
+        if existing:
+            flash(f"Order ID {custom_oid} already exists.", "danger")
+            return redirect(url_for("ops_orders"))
+        oid = custom_oid
+    else:
+        oid = ops.next_id("ORD", "orders", "order_id")
     ops.insert("orders", {
         "order_id": oid,
         "order_date": request.form.get("order_date") or datetime.now().strftime("%Y-%m-%d"),
@@ -1290,7 +1305,7 @@ def ops_payment_new():
     ops.insert("payments", {
         "payment_id": pid,
         "pay_date": request.form.get("pay_date") or datetime.now().strftime("%Y-%m-%d"),
-        "order_id": request.form.get("order_id", ""),
+        "order_id": form_order_id(),
         "client_id": request.form.get("client_id", ""),
         "pay_type": request.form.get("pay_type", "Order Payment"),
         "direction": request.form.get("direction", "IN"),
@@ -1324,7 +1339,7 @@ def ops_shipment_new():
     sid = ops.next_id("SHP", "shipments", "shipment_id")
     ops.insert("shipments", {
         "shipment_id": sid,
-        "order_id": request.form.get("order_id", ""),
+        "order_id": form_order_id(),
         "client_id": request.form.get("client_id", ""),
         "mode": request.form.get("mode", "Sea FCL"),
         "carrier": request.form.get("carrier", ""),
@@ -1427,7 +1442,7 @@ def ops_rmb_new():
     ops.insert("rmb_txns", {
         "txn_id": tid,
         "txn_date": request.form.get("txn_date") or datetime.now().strftime("%Y-%m-%d"),
-        "order_id": request.form.get("order_id", ""),
+        "order_id": form_order_id(),
         "client_id": request.form.get("client_id", ""),
         "txn_type": request.form.get("txn_type", "Client Exchange"),
         "cny_amount": cny,
@@ -1467,7 +1482,7 @@ def ops_sourcing_new():
     ops.insert("sourcing", {
         "sourcing_id": sid,
         "src_date": request.form.get("src_date") or datetime.now().strftime("%Y-%m-%d"),
-        "order_id": request.form.get("order_id", ""),
+        "order_id": form_order_id(),
         "client_id": request.form.get("client_id", ""),
         "category": request.form.get("category", ""),
         "description": desc,

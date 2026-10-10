@@ -8,10 +8,16 @@
   <form method="post" action="{{ url_for('ops_sourcing_new') }}">
     <div class="form-row">
       <div class="form-group"><label>Order ID</label>
-        <select name="order_id">
-          <option value="">— optional —</option>
-          {% for o in orders %}<option value="{{ o.order_id }}">{{ o.order_id }}</option>{% endfor %}
+        <select name="order_id" id="orderSelect">
+          <option value="">— select existing order —</option>
+          {% for o in orders %}
+          <option value="{{ o.order_id }}">{{ o.order_id }}{% if o.client_id %} · {{ o.client_id }}{% endif %}{% if o.description %} · {{ o.description[:40] }}{% endif %}</option>
+          {% endfor %}
         </select>
+        <input type="text" name="order_id_manual" id="orderManual" placeholder="Or type Order ID (e.g. ORD-2026-0001)" style="margin-top:0.35rem;" list="orderList">
+        <datalist id="orderList">
+          {% for o in orders %}<option value="{{ o.order_id }}">{% endfor %}
+        </datalist>
       </div>
       <div class="form-group"><label>Client</label>
         <select name="client_id">

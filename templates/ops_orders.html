@@ -20,7 +20,10 @@
       <div class="form-group"><label>Service Type</label>
         <select name="service_type">{% for s in services %}<option>{{ s }}</option>{% endfor %}</select>
       </div>
-      <div class="form-group"><label>Order Date</label><input type="date" name="order_date" value="{{ '' }}"></div>
+      <div class="form-group"><label>Order Date</label><input type="date" name="order_date"></div>
+      <div class="form-group"><label>Order ID (optional)</label>
+        <input type="text" name="order_id_custom" placeholder="Auto if blank (e.g. ORD-2026-0001)">
+      </div>
     </div>
     <div class="form-group"><label>Description / Goods *</label><input name="description" required></div>
     <div class="form-row">
