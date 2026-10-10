@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Invoice from Order – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Create Invoice from Order {{ order.order_id }}</h1>
+  <a href="{{ url_for('ops_orders') }}" class="btn btn-outline">← Back to Orders</a>
+</div>
+
+<div class="card">
+  <p><strong>Client:</strong> {{ client.company_name or order.client_id }}
+     {% if client.email %} · {{ client.email }}{% endif %}
+     {% if client.phone %} · {{ client.phone }}{% endif %}
+  </p>
+  <p><strong>Service:</strong> {{ order.service_type }} · {{ order.description }}</p>
+  <p><strong>Route:</strong> {{ order.origin or '—' }} → {{ order.destination or '—' }}</p>
+  <p><strong>Order value:</strong> {{ order.currency }} {{ "%.2f"|format(order.order_value or 0) }}
+     (USD {{ "%.2f"|format(order.value_usd or 0) }})</p>
+</div>
+
+<div class="card">
+  <div class="card-title">Invoice Details</div>
+  <form method="post">
+    <div class="form-row">
+      <div class="form-group"><label>Amount</label>
+        <input type="number" step="0.01" name="amount" value="{{ order.order_value or order.value_usd or 0 }}">
+      </div>
+      <div class="form-group"><label>Currency</label>
+        <input name="currency" value="{{ order.currency or 'USD' }}">
+      </div>
+      <div class="form-group"><label>Tax</label>
+        <input type="number" step="0.01" name="tax" value="0">
+      </div>
+      <div class="form-group"><label>Already Paid</label>
+        <input type="number" step="0.01" name="paid" value="0">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Due Days</label><input type="number" name="due_days" value="30"></div>
+      <div class="form-group"><label>Tracking No.</label><input name="tracking" value="{{ order.order_id }}"></div>
+      <div class="form-group"><label>Transport</label>
+        <select name="transport">
+          <option>SEA_FREIGHT</option><option>AIR_FREIGHT</option><option>ROAD</option><option>OTHER</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Boxes</label><input type="number" name="boxes" value="1"></div>
+      <div class="form-group"><label>Weight (kg)</label><input type="number" step="0.1" name="weight_kg" value="0"></div>
+      <div class="form-group"><label>Vol (CBM)</label><input type="number" step="0.01" name="vol_cbm" value="0"></div>
+    </div>
+    <div class="form-group"><label>MoMo</label><input name="momo" value="{{ default_momo }}"></div>
+    <div class="form-group"><label>Bank Details</label><textarea name="bank_details" rows="3">{{ default_bank }}</textarea></div>
+    <button type="submit" class="btn btn-primary">Generate Invoice PDF</button>
+  </form>
+</div>
+{% endblock %}

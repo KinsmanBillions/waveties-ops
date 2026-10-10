@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}RMB Desk – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header"><h1>RMB Exchange & Supplier Payment Desk</h1></div>
+
+<div class="card">
+  <div class="card-title">Reference Rate (CNY per 1 USD)</div>
+  {% if session.get('role') == 'admin' %}
+  <form method="post" action="{{ url_for('ops_rmb_rate') }}" style="display:flex;gap:1rem;align-items:end">
+    <div class="form-group" style="margin:0">
+      <label>Rate</label>
+      <input type="number" step="0.0001" name="rate" value="{{ rate }}" style="width:140px">
+    </div>
+    <button type="submit" class="btn btn-primary">Update Rate</button>
+  </form>
+  {% else %}
+  <p style="font-size:1.25rem;font-weight:700;color:var(--navy);">{{ rate }}</p>
+  <p style="color:var(--muted);font-size:0.85rem;">Only admins can change the reference rate.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-title">New RMB Transaction</div>
+  <form method="post" action="{{ url_for('ops_rmb_new') }}">
+    <div class="form-row">
+      <div class="form-group"><label>Order ID</label>
+        <select name="order_id">
+          <option value="">— optional —</option>
+          {% for o in orders %}<option value="{{ o.order_id }}">{{ o.order_id }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Client</label>
+        <select name="client_id">
+          <option value="">— optional —</option>
+          {% for c in clients %}<option value="{{ c.client_id }}">{{ c.client_id }} — {{ c.company_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Date</label><input type="date" name="txn_date"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Type</label>
+        <select name="txn_type">{% for t in rmb_types %}<option>{{ t }}</option>{% endfor %}</select>
+      </div>
+      <div class="form-group"><label>CNY Amount</label><input type="number" step="0.01" name="cny_amount" value="0"></div>
+      <div class="form-group"><label>Rate Used</label><input type="number" step="0.0001" name="rate_used" value="{{ rate }}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Counterparty / Supplier</label><input name="counterparty"></div>
+      <div class="form-group"><label>Channel</label><input name="channel" value="Bank Transfer"></div>
+      <div class="form-group"><label>Status</label>
+        <select name="status">
+          <option>Pending</option><option>Processing</option><option>Completed</option><option>Failed</option><option>Cancelled</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Notes</label><input name="notes"></div>
+    <button type="submit" class="btn btn-primary">Record Transaction</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">Transactions ({{ txns|length }})</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Date</th><th>Order</th><th>Type</th><th>CNY</th><th>USD</th><th>Rate</th><th>Counterparty</th><th>Status</th></tr>
+      </thead>
+      <tbody>
+        {% for t in txns %}
+        <tr>
+          <td><strong>{{ t.txn_id }}</strong></td>
+          <td>{{ t.txn_date }}</td>
+          <td>{{ t.order_id or '—' }}</td>
+          <td>{{ t.txn_type }}</td>
+          <td>¥{{ "%.2f"|format(t.cny_amount or 0) }}</td>
+          <td>${{ "%.2f"|format(t.usd_amount or 0) }}</td>
+          <td>{{ t.rate_used }}</td>
+          <td>{{ t.counterparty or '—' }}</td>
+          <td><span class="pill">{{ t.status }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" style="text-align:center;color:var(--muted)">No RMB transactions yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

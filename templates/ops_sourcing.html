@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Sourcing – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Sourcing & Buy-for-Me Log</h1></div>
+
+<div class="card">
+  <div class="card-title">New Sourcing Request</div>
+  <form method="post" action="{{ url_for('ops_sourcing_new') }}">
+    <div class="form-row">
+      <div class="form-group"><label>Order ID</label>
+        <select name="order_id">
+          <option value="">— optional —</option>
+          {% for o in orders %}<option value="{{ o.order_id }}">{{ o.order_id }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Client</label>
+        <select name="client_id">
+          <option value="">— optional —</option>
+          {% for c in clients %}<option value="{{ c.client_id }}">{{ c.client_id }} — {{ c.company_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Date</label><input type="date" name="src_date"></div>
+    </div>
+    <div class="form-group"><label>Product Description *</label><input name="description" required></div>
+    <div class="form-row">
+      <div class="form-group"><label>Category</label><input name="category"></div>
+      <div class="form-group"><label>Qty</label><input type="number" step="1" name="qty" value="0"></div>
+      <div class="form-group"><label>Unit</label><input name="unit" value="pcs"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Target Price</label><input type="number" step="0.01" name="target_price" value="0"></div>
+      <div class="form-group"><label>Supplier Name</label><input name="supplier_name"></div>
+      <div class="form-group"><label>Supplier Quote</label><input type="number" step="0.01" name="supplier_quote" value="0"></div>
+    </div>
+    <div class="form-group"><label>Notes</label><input name="notes"></div>
+    <button type="submit" class="btn btn-primary">Create Request</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">All Requests ({{ items|length }})</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Date</th><th>Order</th><th>Category</th><th>Description</th><th>Qty</th><th>Supplier</th><th>Quote</th><th>Status</th><th>QC</th><th>Update</th></tr>
+      </thead>
+      <tbody>
+        {% for s in items %}
+        <tr>
+          <td><strong>{{ s.sourcing_id }}</strong></td>
+          <td>{{ s.src_date }}</td>
+          <td>{{ s.order_id or '—' }}</td>
+          <td>{{ s.category or '—' }}</td>
+          <td style="max-width:180px">{{ s.description }}</td>
+          <td>{{ s.qty }} {{ s.unit }}</td>
+          <td>{{ s.supplier_name or '—' }}</td>
+          <td>{{ "%.2f"|format(s.supplier_quote or 0) }}</td>
+          <td><span class="pill">{{ s.status }}</span></td>
+          <td>{{ s.qc_status }}</td>
+          <td>
+            {% if session.get('role') == 'admin' %}
+            <details>
+              <summary class="btn btn-sm btn-outline" style="cursor:pointer">Update</summary>
+              <form method="post" action="{{ url_for('ops_sourcing_status', sourcing_id=s.sourcing_id) }}" style="padding:0.5rem;min-width:220px">
+                <select name="status">{% for st in statuses %}<option {% if st==s.status %}selected{% endif %}>{{ st }}</option>{% endfor %}</select>
+                <select name="qc_status">
+                  {% for q in ['N/A','Pending','Passed','Failed','Partial'] %}
+                  <option {% if q==s.qc_status %}selected{% endif %}>{{ q }}</option>{% endfor %}
+                </select>
+                <input name="supplier_name" value="{{ s.supplier_name or '' }}" placeholder="Supplier">
+                <input type="number" step="0.01" name="supplier_quote" value="{{ s.supplier_quote or 0 }}">
+                <input name="notes" value="{{ s.notes or '' }}" placeholder="Notes">
+                <button type="submit" class="btn btn-sm btn-primary">Save</button>
+              </form>
+            </details>
+            {% else %}
+            —
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11" style="text-align:center;color:var(--muted)">No sourcing requests yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

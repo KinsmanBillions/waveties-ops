@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Shipments – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Shipment Tracking</h1></div>
+
+<div class="card">
+  <div class="card-title">New Shipment</div>
+  <form method="post" action="{{ url_for('ops_shipment_new') }}">
+    <div class="form-row">
+      <div class="form-group"><label>Order ID</label>
+        <select name="order_id">
+          <option value="">— optional —</option>
+          {% for o in orders %}<option value="{{ o.order_id }}">{{ o.order_id }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Client</label>
+        <select name="client_id">
+          <option value="">— optional —</option>
+          {% for c in clients %}<option value="{{ c.client_id }}">{{ c.client_id }} — {{ c.company_name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Mode</label>
+        <select name="mode">{% for m in modes %}<option>{{ m }}</option>{% endfor %}</select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Carrier / Line</label><input name="carrier"></div>
+      <div class="form-group"><label>BL / AWB No.</label><input name="bl_awb"></div>
+      <div class="form-group"><label>Container / Tracking</label><input name="container_tracking"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Origin Port</label><input name="origin_port"></div>
+      <div class="form-group"><label>Dest. Port</label><input name="dest_port"></div>
+      <div class="form-group"><label>ETD</label><input type="date" name="etd"></div>
+      <div class="form-group"><label>ETA</label><input type="date" name="eta"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Weight (kg)</label><input type="number" step="0.1" name="weight_kg" value="0"></div>
+      <div class="form-group"><label>CBM</label><input type="number" step="0.01" name="cbm" value="0"></div>
+      <div class="form-group"><label>Notes</label><input name="notes"></div>
+    </div>
+    <button type="submit" class="btn btn-primary">Create Shipment</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">All Shipments ({{ shipments|length }})</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>ID</th><th>Order</th><th>Mode</th><th>Carrier</th><th>BL/AWB</th><th>Origin</th><th>Dest</th><th>ETD</th><th>ETA</th><th>Status</th><th>Update</th></tr>
+      </thead>
+      <tbody>
+        {% for s in shipments %}
+        <tr>
+          <td><strong>{{ s.shipment_id }}</strong></td>
+          <td>{{ s.order_id or '—' }}</td>
+          <td>{{ s.mode }}</td>
+          <td>{{ s.carrier or '—' }}</td>
+          <td>{{ s.bl_awb or '—' }}</td>
+          <td>{{ s.origin_port or '—' }}</td>
+          <td>{{ s.dest_port or '—' }}</td>
+          <td>{{ s.etd or '—' }}</td>
+          <td>{{ s.eta or '—' }}</td>
+          <td><span class="pill">{{ s.status }}</span></td>
+          <td>
+            {% if session.get('role') == 'admin' %}
+            <details>
+              <summary class="btn btn-sm btn-outline" style="cursor:pointer">Update</summary>
+              <form method="post" action="{{ url_for('ops_shipment_status', shipment_id=s.shipment_id) }}" style="padding:0.5rem">
+                <select name="status">{% for st in statuses %}<option {% if st==s.status %}selected{% endif %}>{{ st }}</option>{% endfor %}</select>
+                <input type="date" name="atd" placeholder="ATD">
+                <input type="date" name="ata" placeholder="ATA">
+                <input name="notes" value="{{ s.notes or '' }}" placeholder="Notes">
+                <button type="submit" class="btn btn-sm btn-primary">Save</button>
+              </form>
+            </details>
+            {% else %}
+            —
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11" style="text-align:center;color:var(--muted)">No shipments yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
