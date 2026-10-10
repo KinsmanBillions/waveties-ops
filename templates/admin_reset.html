@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Reset Data – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Start From Zero</h1>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-outline">← Dashboard</a>
+</div>
+
+<div class="card" style="border-left:4px solid var(--danger);">
+  <div class="card-title" style="color:var(--danger);">Admin only — permanent delete</div>
+  <p style="margin-bottom:0.75rem;">
+    This removes <strong>all orders, invoices, payments, shipments, RMB transactions, and sourcing records</strong>
+    so balances and lists start empty. User accounts are <strong>not</strong> deleted.
+  </p>
+  <p style="margin-bottom:1rem;color:var(--muted);font-size:0.9rem;">
+    Use this to clear the demo/sample data before real operations.
+  </p>
+  <form method="post" onsubmit="return confirm('This cannot be undone. Clear all commercial data now?');">
+    <div class="form-group">
+      <label><input type="checkbox" name="clear_clients" value="1"> Also delete all clients &amp; invoice customers</label>
+    </div>
+    <div class="form-group">
+      <label>Type <strong>RESET</strong> to confirm</label>
+      <input type="text" name="confirm" placeholder="RESET" autocomplete="off" required style="max-width:200px;">
+    </div>
+    <button type="submit" class="btn" style="background:var(--danger);color:#fff;">Clear All Commercial Data</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">Or delete one by one</div>
+  <ul style="margin-left:1.25rem;color:var(--text);">
+    <li><a href="{{ url_for('ops_orders') }}">Orders</a> — admin Delete on each row</li>
+    <li><a href="{{ url_for('invoice_list') }}">Invoices</a> — admin Delete on each row / invoice page</li>
+    <li><a href="{{ url_for('ops_clients') }}">Clients</a> — admin Edit / Delete</li>
+  </ul>
+</div>
+{% endblock %}

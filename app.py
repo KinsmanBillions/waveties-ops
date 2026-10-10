@@ -390,6 +390,36 @@ def regenerate_pdf(invoice_no):
     return redirect(url_for("view_invoice", invoice_no=invoice_no))
 
 
+
+@app.route("/invoices/<path:invoice_no>/delete", methods=["POST"])
+@login_required
+@admin_required
+def delete_invoice(invoice_no):
+    db = load_db()
+    inv = db.get("invoices", {}).pop(invoice_no, None)
+    if not inv:
+        flash("Invoice not found.", "danger")
+        return redirect(url_for("invoice_list"))
+    save_db(db)
+    # Remove PDF if present
+    safe_name = invoice_no.replace("/", "-")
+    pdf_path = OUTPUT_DIR / f"Invoice_{safe_name}.pdf"
+    try:
+        if pdf_path.exists():
+            pdf_path.unlink()
+    except Exception:
+        pass
+    # Unlink from orders
+    try:
+        for o in ops.order_list():
+            if o.get("invoice_no") == invoice_no:
+                ops.update("orders", "order_id", o["order_id"], {"invoice_no": ""})
+    except Exception:
+        pass
+    flash(f"Invoice {invoice_no} deleted.", "success")
+    return redirect(url_for("invoice_list"))
+
+
 # ── Mark as Paid ──────────────────────────────────────────────
 @app.route("/invoices/<path:invoice_no>/pay", methods=["GET", "POST"])
 @login_required
@@ -715,6 +745,53 @@ def admin_treasury():
     )
 
 
+@app.route("/admin/reset-data", methods=["GET", "POST"])
+@login_required
+@admin_required
+def admin_reset_data():
+    """Admin-only: wipe sample/live commercial data to start from zero."""
+    if request.method == "POST":
+        confirm = (request.form.get("confirm") or "").strip().upper()
+        if confirm != "RESET":
+            flash('Type RESET in capitals to confirm.', "danger")
+            return redirect(url_for("admin_reset_data"))
+        clear_clients = bool(request.form.get("clear_clients"))
+        # Invoices
+        db = load_db()
+        inv_count = len(db.get("invoices", {}))
+        db["invoices"] = {}
+        db["next_invoice_seq"] = 1
+        if clear_clients:
+            db["customers"] = {}
+        save_db(db)
+        # Ops tables
+        with ops.get_conn() as conn:
+            for table in ("payments", "shipments", "rmb_txns", "sourcing", "orders"):
+                conn.execute(f"DELETE FROM {table}")
+            if clear_clients:
+                conn.execute("DELETE FROM clients")
+        # PDFs
+        removed_pdfs = 0
+        for p in OUTPUT_DIR.glob("Invoice_*.pdf"):
+            try:
+                p.unlink()
+                removed_pdfs += 1
+            except Exception:
+                pass
+        flash(
+            f"Data cleared. Removed {inv_count} invoice(s) and operational records"
+            + (" + clients/customers" if clear_clients else "")
+            + f". PDFs removed: {removed_pdfs}. Balances are zero.",
+            "success",
+        )
+        return redirect(url_for("dashboard"))
+    return render_template(
+        "admin_reset.html",
+        company=COMPANY,
+        user=session,
+    )
+
+
 @app.route("/admin/users")
 @login_required
 @admin_required
@@ -961,6 +1038,19 @@ def ops_order_new():
         "notes": request.form.get("notes", ""),
     })
     flash(f"Order {oid} created.", "success")
+    return redirect(url_for("ops_orders"))
+
+
+@app.route("/ops/orders/<order_id>/delete", methods=["POST"])
+@login_required
+@admin_required
+def ops_order_delete(order_id):
+    order = ops.get_one("orders", "order_id", order_id)
+    if not order:
+        flash("Order not found.", "danger")
+        return redirect(url_for("ops_orders"))
+    ops.delete("orders", "order_id", order_id)
+    flash(f"Order {order_id} deleted.", "success")
     return redirect(url_for("ops_orders"))
 
 

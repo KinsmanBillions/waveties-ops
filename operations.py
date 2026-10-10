@@ -152,8 +152,11 @@ def init_ops_db():
         if "base_amount" not in cols:
             c.execute("ALTER TABLE rmb_txns ADD COLUMN base_amount REAL DEFAULT 0")
 
-        if c.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 0:
-            _seed(c)
+        # Sample data only when explicitly requested (env SAMPLE_SEED=1) and tables empty
+        import os
+        if os.environ.get("SAMPLE_SEED") == "1":
+            if c.execute("SELECT COUNT(*) FROM clients").fetchone()[0] == 0:
+                _seed(c)
 
 
 def _seed(c):
