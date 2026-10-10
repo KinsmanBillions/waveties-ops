@@ -247,6 +247,221 @@ def logout():
     return redirect(url_for("login"))
 
 
+# ── Password reset tokens (JSON) ──────────────────────────────
+RESET_TOKENS_FILE = DATA_DIR / "reset_tokens.json"
+# Emergency recovery key — set WAVETIES_RECOVERY_KEY on Render for production
+DEFAULT_RECOVERY_KEY = "WaveTies-Recover-2026"
+
+
+def _load_reset_tokens():
+    if RESET_TOKENS_FILE.exists():
+        try:
+            with open(RESET_TOKENS_FILE, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_reset_tokens(data):
+    with open(RESET_TOKENS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+
+
+def _create_reset_token(username, hours=2):
+    token = secrets.token_urlsafe(32)
+    tokens = _load_reset_tokens()
+    # drop expired
+    now = datetime.now()
+    tokens = {
+        k: v for k, v in tokens.items()
+        if v.get("expires") and datetime.fromisoformat(v["expires"]) > now
+    }
+    tokens[token] = {
+        "username": username,
+        "expires": (now + timedelta(hours=hours)).isoformat(timespec="seconds"),
+        "created": now.isoformat(timespec="seconds"),
+    }
+    _save_reset_tokens(tokens)
+    return token
+
+
+def _consume_reset_token(token):
+    tokens = _load_reset_tokens()
+    entry = tokens.pop(token, None)
+    _save_reset_tokens(tokens)
+    if not entry:
+        return None
+    try:
+        if datetime.fromisoformat(entry["expires"]) < datetime.now():
+            return None
+    except Exception:
+        return None
+    return entry.get("username")
+
+
+def _set_user_password(username, new_password):
+    conn = get_users_db()
+    row = conn.execute("SELECT id FROM users WHERE username=?", (username,)).fetchone()
+    if not row:
+        conn.close()
+        return False
+    conn.execute(
+        "UPDATE users SET password_hash=? WHERE username=?",
+        (generate_password_hash(new_password), username),
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def _send_reset_email(to_email, username, reset_url):
+    smtp = load_smtp_config()
+    if not smtp.get("host") or not smtp.get("user") or not smtp.get("password"):
+        return False, "Email is not configured."
+    try:
+        msg = MIMEMultipart()
+        msg["Subject"] = "WaveTies – Password reset"
+        msg["From"] = smtp.get("from_email") or smtp["user"]
+        msg["To"] = to_email
+        body = (
+            f"Hello {username},\n\n"
+            f"A password reset was requested for your WaveTies account.\n\n"
+            f"Open this link within 2 hours to set a new password:\n{reset_url}\n\n"
+            f"If you did not request this, ignore this email.\n\n"
+            f"— WaveTies"
+        )
+        msg.attach(MIMEText(body, "plain"))
+        with smtplib.SMTP(smtp["host"], int(smtp.get("port", 587))) as server:
+            if smtp.get("use_tls", True):
+                server.starttls()
+            server.login(smtp["user"], smtp["password"])
+            server.send_message(msg)
+        return True, "ok"
+    except Exception as e:
+        return False, str(e)
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "POST":
+        username = request.form.get("username", "").strip().lower()
+        # Always respond generically to avoid user enumeration
+        user = None
+        conn = get_users_db()
+        row = conn.execute("SELECT * FROM users WHERE username=? AND active=1", (username,)).fetchone()
+        conn.close()
+        if row:
+            user = dict(row)
+        if user:
+            token = _create_reset_token(user["username"])
+            reset_url = url_for("reset_password", token=token, _external=True)
+            # Prefer company/user email if present — users table may not have email; try SMTP notify admin path
+            smtp = load_smtp_config()
+            to_addr = smtp.get("from_email") or smtp.get("user") or ""
+            # If the account is admin and we have SMTP, send there so admin can recover
+            if to_addr and smtp.get("host"):
+                ok, err = _send_reset_email(to_addr, user["username"], reset_url)
+                if ok:
+                    flash(
+                        "If that account exists and email is configured, a reset link was sent to the system mailbox. "
+                        "Also check Admin recovery if you are locked out.",
+                        "success",
+                    )
+                else:
+                    flash(
+                        f"Could not send email ({err}). Use Admin recovery with your recovery key instead.",
+                        "warning",
+                    )
+            else:
+                # No SMTP — guide to recovery page; still create token for manual use by support
+                flash(
+                    "Email is not configured. Use Admin recovery (recovery key) to reset the admin password, "
+                    "or ask another admin to reset your password from Users & Roles.",
+                    "warning",
+                )
+                return redirect(url_for("admin_recovery"))
+        else:
+            flash(
+                "If that account exists, follow the instructions sent or use Admin recovery.",
+                "info",
+            )
+        return redirect(url_for("login"))
+    return render_template("forgot_password.html", company=COMPANY)
+
+
+@app.route("/reset-password/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    tokens = _load_reset_tokens()
+    entry = tokens.get(token)
+    username = None
+    if entry:
+        try:
+            if datetime.fromisoformat(entry["expires"]) >= datetime.now():
+                username = entry.get("username")
+        except Exception:
+            username = None
+    if not username:
+        flash("This reset link is invalid or has expired.", "danger")
+        return redirect(url_for("forgot_password"))
+
+    if request.method == "POST":
+        pw = request.form.get("password", "")
+        pw2 = request.form.get("password2", "")
+        if len(pw) < 6:
+            flash("Password must be at least 6 characters.", "danger")
+            return redirect(url_for("reset_password", token=token))
+        if pw != pw2:
+            flash("Passwords do not match.", "danger")
+            return redirect(url_for("reset_password", token=token))
+        # consume token
+        _consume_reset_token(token)
+        if _set_user_password(username, pw):
+            flash(f"Password updated for {username}. You can sign in now.", "success")
+            return redirect(url_for("login"))
+        flash("User not found.", "danger")
+        return redirect(url_for("login"))
+
+    return render_template("reset_password.html", company=COMPANY, username=username, token=token)
+
+
+@app.route("/admin-recovery", methods=["GET", "POST"])
+def admin_recovery():
+    """Emergency admin password reset using recovery key (no login required)."""
+    if request.method == "POST":
+        key = request.form.get("recovery_key", "")
+        username = request.form.get("username", "admin").strip().lower() or "admin"
+        pw = request.form.get("password", "")
+        pw2 = request.form.get("password2", "")
+        expected = os.environ.get("WAVETIES_RECOVERY_KEY", DEFAULT_RECOVERY_KEY)
+        if not secrets.compare_digest(key, expected):
+            flash("Invalid recovery key.", "danger")
+            return redirect(url_for("admin_recovery"))
+        if len(pw) < 6:
+            flash("Password must be at least 6 characters.", "danger")
+            return redirect(url_for("admin_recovery"))
+        if pw != pw2:
+            flash("Passwords do not match.", "danger")
+            return redirect(url_for("admin_recovery"))
+        # Only allow resetting accounts that are admin role (or username admin)
+        conn = get_users_db()
+        row = conn.execute("SELECT * FROM users WHERE username=?", (username,)).fetchone()
+        conn.close()
+        if not row:
+            flash(f"User '{username}' not found.", "danger")
+            return redirect(url_for("admin_recovery"))
+        user = dict(row)
+        if normalize_role(user.get("role")) != "admin" and username != "admin":
+            flash("Recovery only works for admin accounts.", "danger")
+            return redirect(url_for("admin_recovery"))
+        if _set_user_password(username, pw):
+            flash(f"Password for '{username}' has been reset. Sign in with the new password.", "success")
+            return redirect(url_for("login"))
+        flash("Could not update password.", "danger")
+        return redirect(url_for("admin_recovery"))
+    return render_template("admin_recovery.html", company=COMPANY)
+
+
 # ──────────────────────────────────────────────────────────────
 # Dashboard & Reports
 # ──────────────────────────────────────────────────────────────

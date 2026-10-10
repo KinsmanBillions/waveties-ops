@@ -26,8 +26,10 @@
       </button>
     </form>
 
-    <p style="margin-top:1.25rem;font-size:0.75rem;color:#888;text-align:center;">
-      Demo: <b>admin</b>/admin123 · <b>manager</b>/manager123 · <b>accountant</b>/account123 · <b>ops</b>/ops123 · <b>reception</b>/reception123
+    <p style="margin-top:1rem;font-size:0.85rem;text-align:center;">
+      <a href="{{ url_for('forgot_password') }}">Forgot password?</a>
+      &nbsp;·&nbsp;
+      <a href="{{ url_for('admin_recovery') }}">Admin recovery</a>
     </p>
   </div>
 </div>
