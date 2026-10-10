@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Receiving Accounts – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Receiving Accounts</h1>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-outline">← Dashboard</a>
+</div>
+
+<p style="color:var(--muted);margin-bottom:1.25rem;font-size:0.9rem;">
+  Admin only. Company accounts that receive customer invoice payments. Not shown to workers.
+</p>
+
+<div class="stats-grid">
+  <div class="stat-card" style="border-left-color:#10B981;">
+    <div class="label">Total Received (Invoices)</div>
+    <div class="value" style="font-size:1.35rem;">{{ currency }} {{ "%.2f"|format(totals.invoice_paid) }}</div>
+  </div>
+  <div class="stat-card" style="border-left-color:#F59E0B;">
+    <div class="label">Outstanding (Unpaid)</div>
+    <div class="value" style="font-size:1.35rem;">{{ currency }} {{ "%.2f"|format(totals.outstanding) }}</div>
+  </div>
+  <div class="stat-card" style="border-left-color:#0A2540;">
+    <div class="label">Invoiced Total</div>
+    <div class="value" style="font-size:1.35rem;">{{ currency }} {{ "%.2f"|format(totals.invoiced) }}</div>
+  </div>
+  <div class="stat-card" style="border-left-color:#00B4D8;">
+    <div class="label">Ops Register IN (USD)</div>
+    <div class="value" style="font-size:1.35rem;">${{ "%.2f"|format(totals.ops_in) }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Account Details</div>
+  <form method="post" action="{{ url_for('admin_treasury') }}">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Default Mobile Money Provider</label>
+        <select name="momo_provider">
+          {% for p in providers %}
+          <option value="{{ p }}" {% if p == accounts.momo_provider %}selected{% endif %}>{{ p }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Mobile Money Account (Name – Number)</label>
+        <input type="text" name="momo" value="{{ accounts.momo }}" required>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Bank Details (one line per entry)</label>
+      <textarea name="bank_details" rows="4" required>{{ accounts.bank_text }}</textarea>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Contact Phone (on invoices)</label>
+        <input type="text" name="contact_phone" value="{{ accounts.contact_phone }}">
+      </div>
+      <div class="form-group">
+        <label>Billing Email</label>
+        <input type="email" name="billing_email" value="{{ accounts.billing_email }}">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Internal notes (admin only – never on invoices)</label>
+      <textarea name="internal_notes" rows="2" placeholder="e.g. primary settlement account, who holds the SIM…">{{ accounts.internal_notes }}</textarea>
+    </div>
+    <button type="submit" class="btn btn-primary">Save Account Details</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">Recent Invoice Payments Received</div>
+  {% if payment_rows %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Invoice</th>
+          <th>Customer</th>
+          <th>Date</th>
+          <th>Amount</th>
+          <th>Recorded by</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in payment_rows %}
+        <tr>
+          <td><a href="{{ url_for('view_invoice', invoice_no=r.invoice_no) }}">{{ r.invoice_no }}</a></td>
+          <td>{{ r.customer }}</td>
+          <td>{{ r.at }}</td>
+          <td>{{ r.currency }} {{ "%.2f"|format(r.amount) }}</td>
+          <td>{{ r.by }}</td>
+          <td>{{ r.note or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p style="color:var(--muted);">No payment lines recorded on invoices yet. When an admin marks an invoice paid, entries appear here.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -88,9 +88,21 @@
 
   <div class="card">
     <div class="card-title">Payment Details (optional override)</div>
-    <div class="form-group">
-      <label>TELECEL CASH</label>
-      <input type="text" name="momo" value="{{ default_momo }}">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Mobile Money Provider</label>
+        <select name="momo_provider">
+          {% set mp = default_momo_provider if default_momo_provider is defined else 'TELECEL CASH' %}
+          <option value="TELECEL CASH" {% if mp == 'TELECEL CASH' %}selected{% endif %}>TELECEL CASH</option>
+          <option value="MTN MOMO" {% if mp == 'MTN MOMO' %}selected{% endif %}>MTN MOMO</option>
+          <option value="AT MONEY" {% if mp == 'AT MONEY' %}selected{% endif %}>AT MONEY</option>
+          <option value="OTHER" {% if mp == 'OTHER' %}selected{% endif %}>OTHER</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Account Name / Number</label>
+        <input type="text" name="momo" value="{{ default_momo }}" placeholder="Name - number">
+      </div>
     </div>
     <div class="form-group">
       <label>Bank Details (one line per entry)</label>

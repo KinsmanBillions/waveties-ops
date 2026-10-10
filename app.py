@@ -315,6 +315,7 @@ def create_invoice_page():
                 "paid": paid,
                 "items": items,
                 "momo": request.form.get("momo") or COMPANY.get("momo"),
+                "momo_provider": request.form.get("momo_provider") or "TELECEL CASH",
                 "bank_lines": [
                     line.strip()
                     for line in (request.form.get("bank_details") or "\n".join(COMPANY.get("bank_lines", []))).splitlines()
@@ -329,14 +330,16 @@ def create_invoice_page():
             flash(f"Error creating invoice: {e}", "danger")
             return redirect(url_for("create_invoice_page"))
 
+    ra = load_receiving_accounts()
     return render_template(
         "create_invoice.html",
         company=COMPANY,
         user=session,
         customers=customers,
-        default_momo=COMPANY.get("momo", ""),
-        default_bank="\n".join(COMPANY.get("bank_lines", [])),
-        default_phone=COMPANY.get("phone", ""),
+        default_momo=ra.get("momo") or COMPANY.get("momo", ""),
+        default_bank="\n".join(ra.get("bank_lines") or COMPANY.get("bank_lines", [])),
+        default_phone=ra.get("contact_phone") or COMPANY.get("phone", ""),
+        default_momo_provider=ra.get("momo_provider") or "TELECEL CASH",
     )
 
 
@@ -597,6 +600,121 @@ def customer_delete(key):
 # ──────────────────────────────────────────────────────────────
 # Admin: Users & SMTP
 # ──────────────────────────────────────────────────────────────
+
+# ──────────────────────────────────────────────────────────────
+# Admin: Receiving Accounts (treasury) — hidden from workers
+# ──────────────────────────────────────────────────────────────
+RECEIVING_ACCOUNTS_FILE = DATA_DIR / "receiving_accounts.json"
+MOMO_PROVIDERS = ["TELECEL CASH", "MTN MOMO", "AT MONEY", "OTHER"]
+
+
+def load_receiving_accounts():
+    defaults = {
+        "momo_provider": "TELECEL CASH",
+        "momo": COMPANY.get("momo", ""),
+        "bank_lines": list(COMPANY.get("bank_lines", [])),
+        "contact_phone": COMPANY.get("phone", ""),
+        "billing_email": COMPANY.get("email", ""),
+        "internal_notes": "",
+    }
+    if RECEIVING_ACCOUNTS_FILE.exists():
+        try:
+            with open(RECEIVING_ACCOUNTS_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            defaults.update(data)
+        except Exception:
+            pass
+    if isinstance(defaults.get("bank_lines"), str):
+        defaults["bank_lines"] = [ln.strip() for ln in defaults["bank_lines"].splitlines() if ln.strip()]
+    return defaults
+
+
+def save_receiving_accounts(data):
+    with open(RECEIVING_ACCOUNTS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+@app.route("/admin/accounts", methods=["GET", "POST"])
+@login_required
+@admin_required
+def admin_treasury():
+    if request.method == "POST":
+        bank_lines = [
+            line.strip()
+            for line in (request.form.get("bank_details") or "").splitlines()
+            if line.strip()
+        ]
+        data = {
+            "momo_provider": request.form.get("momo_provider") or "TELECEL CASH",
+            "momo": request.form.get("momo", "").strip(),
+            "bank_lines": bank_lines,
+            "contact_phone": request.form.get("contact_phone", "").strip(),
+            "billing_email": request.form.get("billing_email", "").strip(),
+            "internal_notes": request.form.get("internal_notes", "").strip(),
+        }
+        save_receiving_accounts(data)
+        # Keep invoice defaults in sync for new invoices
+        COMPANY["momo"] = data["momo"]
+        COMPANY["bank_lines"] = data["bank_lines"]
+        if data["contact_phone"]:
+            COMPANY["phone"] = data["contact_phone"]
+        if data["billing_email"]:
+            COMPANY["email"] = data["billing_email"]
+        flash("Receiving account details saved.", "success")
+        return redirect(url_for("admin_treasury"))
+
+    accounts = load_receiving_accounts()
+    accounts["bank_text"] = "\n".join(accounts.get("bank_lines") or [])
+
+    db = load_db()
+    invoices = db.get("invoices", {})
+    invoice_paid = sum(float(i.get("paid") or 0) for i in invoices.values())
+    outstanding = sum(max(0, float(i.get("balance_due") or 0)) for i in invoices.values())
+    invoiced = sum(float(i.get("total") or 0) for i in invoices.values())
+
+    try:
+        ops_stats = ops.ops_kpis()
+        ops_in = float(ops_stats.get("total_in") or 0)
+    except Exception:
+        ops_in = 0.0
+
+    payment_rows = []
+    for inv_no, inv in invoices.items():
+        for p in inv.get("payments") or []:
+            payment_rows.append({
+                "invoice_no": inv_no,
+                "customer": inv.get("customer_name", ""),
+                "amount": float(p.get("amount") or 0),
+                "currency": inv.get("currency") or "GHS",
+                "by": p.get("by") or "—",
+                "at": p.get("at") or "",
+                "note": p.get("note") or "",
+            })
+    payment_rows.sort(key=lambda r: r["at"], reverse=True)
+    payment_rows = payment_rows[:50]
+
+    # Primary currency from latest invoices or GHS
+    currency = "GHS"
+    if invoices:
+        currency = list(invoices.values())[-1].get("currency") or "GHS"
+
+    return render_template(
+        "admin_treasury.html",
+        accounts=accounts,
+        providers=MOMO_PROVIDERS,
+        totals={
+            "invoice_paid": invoice_paid,
+            "outstanding": outstanding,
+            "invoiced": invoiced,
+            "ops_in": ops_in,
+        },
+        payment_rows=payment_rows,
+        currency=currency,
+        company=COMPANY,
+        user=session,
+    )
+
+
 @app.route("/admin/users")
 @login_required
 @admin_required
@@ -839,6 +957,7 @@ def ops_order_to_invoice(order_id):
                     "amount": amount,
                 }],
                 "momo": request.form.get("momo") or COMPANY.get("momo"),
+                "momo_provider": request.form.get("momo_provider") or "TELECEL CASH",
                 "bank_lines": [
                     line.strip()
                     for line in (request.form.get("bank_details") or "\n".join(COMPANY.get("bank_lines", []))).splitlines()

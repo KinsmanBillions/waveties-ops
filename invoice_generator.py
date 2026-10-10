@@ -335,6 +335,7 @@ def build_notes_and_totals(styles, data):
     balance = data.get("balance_due", total - paid)
 
     momo = data.get("momo") or COMPANY.get("momo", "")
+    momo_provider = data.get("momo_provider") or "TELECEL CASH"
     bank_lines = data.get("bank_lines") or COMPANY.get("bank_lines", [])
     if isinstance(bank_lines, str):
         bank_lines = [bank_lines]
@@ -344,7 +345,7 @@ def build_notes_and_totals(styles, data):
     notes_text = f"""
     <b>Notes:</b><br/>
     Payment can be made into the accounts below:<br/>
-    <b>TELECEL CASH:</b> {momo}<br/>
+    <b>{momo_provider}:</b> {momo}<br/>
     <b>BANK:</b> {bank_html}<br/><br/>
     If you have any query about this invoice please contact us on: {phone}.
     """

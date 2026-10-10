@@ -250,6 +250,7 @@
       <a href="{{ url_for('customers_list') }}">Customers</a>
       <a href="{{ url_for('reports') }}">Reports</a>
       {% if session.get('role') == 'admin' %}
+      <a href="{{ url_for('admin_treasury') }}" title="Receiving accounts (admin only)">Accounts</a>
       <a href="{{ url_for('admin_users') }}">Users</a>
       <a href="{{ url_for('admin_smtp') }}">Email Setup</a>
       {% endif %}

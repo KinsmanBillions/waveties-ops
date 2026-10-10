@@ -48,7 +48,19 @@
       <div class="form-group"><label>Weight (kg)</label><input type="number" step="0.1" name="weight_kg" value="0"></div>
       <div class="form-group"><label>Vol (CBM)</label><input type="number" step="0.01" name="vol_cbm" value="0"></div>
     </div>
-    <div class="form-group"><label>MoMo</label><input name="momo" value="{{ default_momo }}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Mobile Money Provider</label>
+        <select name="momo_provider">
+          <option value="TELECEL CASH" selected>TELECEL CASH</option>
+          <option value="MTN MOMO">MTN MOMO</option>
+          <option value="AT MONEY">AT MONEY</option>
+          <option value="OTHER">OTHER</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Account Name / Number</label>
+        <input name="momo" value="{{ default_momo }}" placeholder="Name - number">
+      </div>
+    </div>
     <div class="form-group"><label>Bank Details</label><textarea name="bank_details" rows="3">{{ default_bank }}</textarea></div>
     <button type="submit" class="btn btn-primary">Generate Invoice PDF</button>
   </form>
