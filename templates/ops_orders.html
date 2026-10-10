@@ -32,7 +32,7 @@
     </div>
     <div class="form-row">
       <div class="form-group"><label>Currency</label>
-        <select name="currency">{% for c in currencies %}<option>{{ c }}</option>{% endfor %}</select>
+        <select name="currency">{% for c in currencies %}<option value="{{ c }}" {% if c=='USD' %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
       </div>
       <div class="form-group"><label>Order Value</label><input type="number" step="0.01" name="order_value" value="0"></div>
       <div class="form-group"><label>Value (USD)</label><input type="number" step="0.01" name="value_usd" value="0"></div>

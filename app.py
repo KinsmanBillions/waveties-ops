@@ -897,7 +897,7 @@ def admin_reset_data():
 @login_required
 @admin_required
 def admin_users():
-    return render_template("admin_users.html", users=list_users(), company=COMPANY, user=session, role_labels=ROLE_LABELS)
+    return render_template("admin_users.html", users=list_users(), company=COMPANY, user=session, role_labels=ROLE_LABELS, roles=ROLES)
 
 
 @app.route("/admin/users/new", methods=["GET", "POST"])
@@ -956,6 +956,29 @@ def admin_user_edit(uid):
         return redirect(url_for("admin_users"))
     conn.close()
     return render_template("admin_user_form.html", edit_user=edit_user, company=COMPANY, user=session, roles=ROLES)
+
+
+
+@app.route("/admin/users/<int:uid>/role", methods=["POST"])
+@login_required
+@admin_required
+def admin_user_set_role(uid):
+    """Quick role assignment from the Users list."""
+    role = normalize_role(request.form.get("role", "receptionist"))
+    if role not in ROLE_LABELS and role != "worker":
+        flash("Invalid role.", "danger")
+        return redirect(url_for("admin_users"))
+    conn = get_users_db()
+    row = conn.execute("SELECT id, username FROM users WHERE id=?", (uid,)).fetchone()
+    if not row:
+        conn.close()
+        flash("User not found.", "danger")
+        return redirect(url_for("admin_users"))
+    conn.execute("UPDATE users SET role=? WHERE id=?", (role, uid))
+    conn.commit()
+    conn.close()
+    flash(f"Role for {row['username']} set to {ROLE_LABELS.get(role, role)}.", "success")
+    return redirect(url_for("admin_users"))
 
 
 @app.route("/admin/smtp", methods=["GET", "POST"])

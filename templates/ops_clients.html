@@ -23,7 +23,7 @@
         <select name="client_type">{% for t in client_types %}<option>{{ t }}</option>{% endfor %}</select>
       </div>
       <div class="form-group"><label>Preferred Currency</label>
-        <select name="preferred_currency">{% for c in currencies %}<option>{{ c }}</option>{% endfor %}</select>
+        <select name="preferred_currency">{% for c in currencies %}<option value="{{ c }}" {% if c=='USD' %}selected{% endif %}>{{ c }}</option>{% endfor %}</select>
       </div>
       <div class="form-group"><label>Credit Terms (Days)</label><input name="credit_terms" type="number" value="0" min="0"></div>
     </div>

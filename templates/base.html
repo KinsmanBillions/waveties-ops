@@ -29,45 +29,46 @@
     a { color: var(--cyan-dark); text-decoration: none; }
     a:hover { text-decoration: underline; }
 
-    /* Navbar */
+    /* Navbar — single row, no wrap */
     .navbar {
       background: var(--navy);
       color: white;
-      padding: 0.6rem 1.25rem;
+      padding: 0.55rem 1.1rem;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 1rem;
+      gap: 0.75rem;
       box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
+      overflow-x: auto;
     }
     .navbar-brand {
       display: flex;
       align-items: center;
-      gap: 0.6rem;
+      gap: 0.5rem;
       font-weight: 700;
-      font-size: 1.05rem;
+      font-size: 1rem;
       color: white;
       text-decoration: none;
       flex-shrink: 0;
       white-space: nowrap;
     }
-    .navbar-brand img { height: 32px; width: 32px; border-radius: 6px; }
+    .navbar-brand img { height: 30px; width: 30px; border-radius: 6px; }
     .navbar-center {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       align-items: center;
-      gap: 0.15rem 0.35rem;
+      gap: 0.1rem;
       flex: 1;
       justify-content: center;
       min-width: 0;
     }
     .navbar-center a {
-      color: rgba(255,255,255,0.88);
-      font-size: 0.78rem;
+      color: rgba(255,255,255,0.9);
+      font-size: 0.8rem;
       font-weight: 500;
       text-decoration: none;
-      padding: 0.3rem 0.5rem;
+      padding: 0.35rem 0.55rem;
       border-radius: 4px;
       white-space: nowrap;
     }
@@ -79,16 +80,16 @@
     .navbar-right {
       display: flex;
       align-items: center;
-      gap: 0.6rem;
+      gap: 0.45rem;
       flex-shrink: 0;
       white-space: nowrap;
     }
     .navbar-right a {
-      color: rgba(255,255,255,0.88);
-      font-size: 0.78rem;
+      color: rgba(255,255,255,0.9);
+      font-size: 0.8rem;
       font-weight: 500;
       text-decoration: none;
-      padding: 0.3rem 0.5rem;
+      padding: 0.35rem 0.55rem;
       border-radius: 4px;
     }
     .navbar-right a:hover {
@@ -366,15 +367,15 @@
     <div class="navbar-right">
       {% set r = session.get('role') or '' %}
       {% if r in ['admin', 'manager', 'accountant'] %}
-      <a href="{{ url_for('admin_treasury') }}" title="Receiving accounts">Accounts</a>
-      {% endif %}
-      {% if r == 'admin' %}
       <div class="nav-dropdown">
         <button type="button" class="nav-dropdown-toggle" aria-haspopup="true">Admin ▾</button>
         <div class="nav-dropdown-menu">
-          <a href="{{ url_for('admin_users') }}">Users</a>
+          <a href="{{ url_for('admin_treasury') }}">Accounts</a>
+          {% if r == 'admin' %}
+          <a href="{{ url_for('admin_users') }}">Users &amp; Roles</a>
           <a href="{{ url_for('admin_smtp') }}">Email Setup</a>
           <a href="{{ url_for('admin_reset_data') }}">Reset Data</a>
+          {% endif %}
         </div>
       </div>
       {% endif %}

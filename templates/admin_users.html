@@ -1,44 +1,55 @@
 {% extends "base.html" %}
-{% block title %}Users – WaveTies Admin{% endblock %}
+{% block title %}Users & Roles – WaveTies{% endblock %}
 
 {% block content %}
 <div class="page-header">
-  <h1>User Management</h1>
+  <h1>Users &amp; Roles</h1>
   <a href="{{ url_for('admin_user_new') }}" class="btn btn-primary">+ Add User</a>
 </div>
 
 <div class="card">
-  <table>
-    <thead>
-      <tr>
-        <th>Username</th>
-        <th>Name</th>
-        <th>Role</th>
-        <th>Status</th>
-        <th>Created</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for u in users %}
-      <tr>
-        <td><b>{{ u.username }}</b></td>
-        <td>{{ u.name }}</td>
-        <td>
-          {% set r = u.role if u.role != 'worker' else 'receptionist' %}
-          <span class="badge-role" style="{% if r == 'admin' %}background:#0A2540;color:#00B4D8;{% elif r == 'manager' %}background:#0077B6;color:white;{% elif r == 'accountant' %}background:#10B981;color:white;{% elif r == 'operations' %}background:#F59E0B;color:#1A1A2E;{% else %}background:#E2E8F0;color:#0A2540;{% endif %}">
-            {{ role_labels.get(r, r)|title if role_labels is defined else r|title }}
-          </span>
-        </td>
-        <td>{{ 'Active' if u.active else 'Disabled' }}</td>
-        <td>{{ u.created_at or '—' }}</td>
-        <td>
-          <a href="{{ url_for('admin_user_edit', uid=u.id) }}" class="btn btn-sm btn-outline">Edit</a>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+  <div class="card-title">Assign roles to users</div>
+  <p style="color:var(--muted);font-size:0.85rem;margin-bottom:1rem;">
+    Change a user's role with the dropdown and click <b>Save role</b>, or open <b>Edit</b> for full details (name, password, active).
+  </p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Username</th>
+          <th>Name</th>
+          <th>Role</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td><b>{{ u.username }}</b></td>
+          <td>{{ u.name }}</td>
+          <td>
+            <form method="post" action="{{ url_for('admin_user_set_role', uid=u.id) }}" style="display:flex;gap:0.4rem;align-items:center;">
+              <select name="role" style="min-width:140px;">
+                {% set current = u.role if u.role != 'worker' else 'receptionist' %}
+                {% for value, label in roles %}
+                <option value="{{ value }}" {% if current == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-primary">Save role</button>
+            </form>
+          </td>
+          <td>{{ 'Active' if u.active else 'Disabled' }}</td>
+          <td>{{ u.created_at or '—' }}</td>
+          <td>
+            <a href="{{ url_for('admin_user_edit', uid=u.id) }}" class="btn btn-sm btn-outline">Edit</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 
 <div class="card" style="margin-top:1rem;">
