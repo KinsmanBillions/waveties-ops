@@ -67,3 +67,32 @@ Open http://127.0.0.1:5000
 
 ## Brand
 Navy `#0A2540` · Sea Blue `#00B4D8` · Tagline: *Stronger Ties*
+
+
+## Data persistence (important)
+
+On **Render** and **Railway**, the app disk is **ephemeral**. Redeploys wipe local files, so `data/users.db` and orders would reset to defaults unless you attach a **persistent disk**.
+
+### Render setup
+1. Dashboard → your service → **Disks** → Add disk  
+2. Mount path: `/var/data`  
+3. Environment variables:
+
+| Variable | Value | Purpose |
+|----------|--------|---------|
+| `WAVETIES_DATA` | `/var/data` | Store users, orders, invoices here |
+| `SECRET_KEY` | long random string | Keep sessions stable across restarts |
+| `WAVETIES_RECOVERY_KEY` | your secret | Admin password recovery |
+| `ADMIN_PASSWORD` | (optional) | Used only on **first** boot if DB is empty |
+| `SEED_DEMO_USERS` | leave unset | Do **not** set in production |
+
+4. Redeploy once after adding the disk.
+
+Without `WAVETIES_DATA` on a persistent volume, **every redeploy recreates an empty database** and seeds a default `admin` account again.
+
+### What is stored under WAVETIES_DATA
+- `users.db` — logins and roles  
+- `operations.db` — clients, orders, payments, shipments, RMB, sourcing  
+- `invoices_db.json` — invoices  
+- `invoices/` — PDF files  
+- `smtp_config.json`, `receiving_accounts.json`, `reset_tokens.json`

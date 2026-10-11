@@ -8,7 +8,12 @@ from pathlib import Path
 from contextlib import contextmanager
 
 ROOT = Path(__file__).resolve().parent
-DB_PATH = ROOT / "data" / "operations.db"
+try:
+    from paths_config import DATA_DIR as _DATA
+except Exception:
+    _DATA = ROOT / "data"
+    _DATA.mkdir(parents=True, exist_ok=True)
+DB_PATH = _DATA / "operations.db"
 
 
 @contextmanager

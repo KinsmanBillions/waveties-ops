@@ -40,10 +40,15 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
-DATA_DIR = ROOT / "data"
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+try:
+    from paths_config import DATA_DIR
+except Exception:
+    DATA_DIR = ROOT / "data"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 USERS_DB = DATA_DIR / "users.db"
 SMTP_CONFIG_FILE = DATA_DIR / "smtp_config.json"
+# Log where data lives (visible in Render logs)
+print(f"[WaveTies] DATA_DIR = {DATA_DIR.resolve()}", flush=True)
 
 
 # ──────────────────────────────────────────────────────────────
@@ -121,22 +126,35 @@ def init_users_db():
         conn.commit()
     except Exception:
         pass
-    # Seed default users if empty
+    # Seed users ONLY when the table is empty (never overwrites existing accounts).
+    # Demo accounts only if SEED_DEMO_USERS=1. Otherwise a single admin from env.
     cur = conn.execute("SELECT COUNT(*) FROM users")
     if cur.fetchone()[0] == 0:
-        defaults = [
-            ("admin", "admin123", "System Admin", "admin"),
-            ("manager", "manager123", "Operations Manager", "manager"),
-            ("accountant", "account123", "Accounts Officer", "accountant"),
-            ("ops", "ops123", "Operations Officer", "operations"),
-            ("reception", "reception123", "Front Desk", "receptionist"),
-        ]
+        seed_demo = (os.environ.get("SEED_DEMO_USERS") or "").strip() in ("1", "true", "yes")
+        if seed_demo:
+            defaults = [
+                ("admin", os.environ.get("ADMIN_PASSWORD") or "admin123", "System Admin", "admin"),
+                ("manager", "manager123", "Operations Manager", "manager"),
+                ("accountant", "account123", "Accounts Officer", "accountant"),
+                ("ops", "ops123", "Operations Officer", "operations"),
+                ("reception", "reception123", "Front Desk", "receptionist"),
+            ]
+        else:
+            # Production-safe: one admin only (change password after first login)
+            admin_user = (os.environ.get("ADMIN_USERNAME") or "admin").strip().lower()
+            admin_pass = os.environ.get("ADMIN_PASSWORD") or "admin123"
+            defaults = [
+                (admin_user, admin_pass, "System Admin", "admin"),
+            ]
         for u, p, n, r in defaults:
             conn.execute(
                 "INSERT INTO users (username, password_hash, name, role, created_at) VALUES (?,?,?,?,?)",
                 (u, generate_password_hash(p), n, r, datetime.now().isoformat(timespec="seconds"))
             )
         conn.commit()
+        print(f"[WaveTies] Seeded {len(defaults)} user(s) into empty database.", flush=True)
+    else:
+        print(f"[WaveTies] Users DB has existing accounts — seed skipped.", flush=True)
     conn.close()
 
 

@@ -456,8 +456,14 @@ def generate_invoice(data: dict, output_path: str):
 # ──────────────────────────────────────────────────────────────
 # JSON store + CLI
 # ──────────────────────────────────────────────────────────────
-DB_PATH = Path(__file__).parent / "data" / "invoices_db.json"
-OUTPUT_DIR = Path(__file__).parent
+try:
+    from paths_config import DATA_DIR as _DATA
+except Exception:
+    _DATA = Path(__file__).parent / "data"
+    _DATA.mkdir(parents=True, exist_ok=True)
+DB_PATH = _DATA / "invoices_db.json"
+OUTPUT_DIR = _DATA / "invoices"
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def load_db():
