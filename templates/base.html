@@ -177,10 +177,88 @@
       align-items: center;
       gap: 0.25rem;
     }
-    @media (max-width: 900px) {
-      .navbar { padding: 0.5rem 0.75rem; }
-      .navbar-center { justify-content: flex-start; }
-      .navbar-center a { font-size: 0.72rem; padding: 0.25rem 0.4rem; }
+    /* Hamburger */
+    .nav-toggle {
+      display: none;
+      background: rgba(0,180,216,0.25);
+      border: 1px solid rgba(0,180,216,0.45);
+      color: white;
+      font-size: 1.25rem;
+      line-height: 1;
+      padding: 0.35rem 0.65rem;
+      border-radius: 6px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .nav-toggle:hover { background: rgba(0,180,216,0.4); }
+
+    @media (max-width: 960px) {
+      .navbar {
+        flex-wrap: wrap;
+        padding: 0.5rem 0.75rem;
+        gap: 0.4rem;
+      }
+      .nav-toggle { display: inline-block; }
+      .navbar-center,
+      .navbar-right {
+        display: none;
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0;
+        flex: none;
+        white-space: normal;
+      }
+      .navbar.nav-open .navbar-center,
+      .navbar.nav-open .navbar-right {
+        display: flex;
+      }
+      .navbar-center a,
+      .navbar-right a {
+        display: block;
+        padding: 0.7rem 0.75rem;
+        font-size: 0.9rem;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        border-radius: 0;
+      }
+      .navbar-right .nav-divider { display: none; }
+      .navbar-right .user-chip {
+        padding: 0.7rem 0.75rem;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        color: rgba(255,255,255,0.85);
+        font-size: 0.85rem;
+      }
+      .nav-dropdown { width: 100%; }
+      .nav-dropdown-toggle {
+        width: 100%;
+        text-align: left;
+        border-radius: 0;
+        border: none;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        background: transparent;
+        padding: 0.7rem 0.75rem;
+        font-size: 0.9rem;
+      }
+      .nav-dropdown-menu {
+        position: static;
+        display: none;
+        box-shadow: none;
+        border: none;
+        border-radius: 0;
+        background: rgba(0,0,0,0.2);
+        min-width: 0;
+        width: 100%;
+      }
+      .nav-dropdown.open .nav-dropdown-menu { display: block; }
+      .nav-dropdown-menu a {
+        color: rgba(255,255,255,0.9);
+        padding-left: 1.25rem;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+      }
+      .nav-dropdown-menu a:hover {
+        background: rgba(0,180,216,0.2);
+        color: white;
+      }
     }
 
     /* Layout */
@@ -353,6 +431,7 @@
       <img src="{{ url_for('static', filename='logo.png') }}" alt="WaveTies" onerror="this.style.display='none'">
       WaveTies
     </a>
+    <button type="button" class="nav-toggle" id="navToggle" aria-label="Menu">☰</button>
 
     <div class="navbar-center">
       <a href="{{ url_for('dashboard') }}">Dashboard</a>
@@ -412,6 +491,14 @@
   {% block scripts %}{% endblock %}
   <script>
   (function(){
+    var nav = document.querySelector('.navbar');
+    var toggle = document.getElementById('navToggle');
+    if (toggle && nav) {
+      toggle.addEventListener('click', function(e){
+        e.stopPropagation();
+        nav.classList.toggle('nav-open');
+      });
+    }
     document.querySelectorAll('.nav-dropdown').forEach(function(dd){
       var btn = dd.querySelector('.nav-dropdown-toggle');
       if (!btn) return;
