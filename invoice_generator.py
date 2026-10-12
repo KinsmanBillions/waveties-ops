@@ -203,7 +203,7 @@ def build_header(styles):
     # Logo + name stacked on the left
     left_parts = []
     if COMPANY.get("logo_path") and Path(COMPANY["logo_path"]).exists():
-        logo = Image(COMPANY["logo_path"], width=22*mm, height=22*mm)
+        logo = Image(COMPANY["logo_path"], width=42*mm, height=26*mm)
         left_parts.append(logo)
 
     name_block = [
