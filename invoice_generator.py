@@ -196,34 +196,52 @@ def create_styles():
         textColor=COMPANY["muted"],
         alignment=TA_CENTER,
     ))
+    styles.add(ParagraphStyle(
+        name="Tagline",
+        fontName="Helvetica-Oblique",
+        fontSize=8,
+        textColor=COMPANY["primary_dark"],
+        alignment=TA_CENTER,
+        leading=10,
+        spaceBefore=0,
+        spaceAfter=0,
+    ))
     return styles
 
 
 def build_header(styles):
-    """Header: full logo (includes WaveTies wordmark) + INVOICE title.
-    Do not print the long legal name beside the logo — it duplicates and looks messy.
-    """
-    left_cell = []
+    """Header: logo (with WaveTies wordmark) + tagline centered under it + INVOICE."""
     logo_path = COMPANY.get("logo_path") or ""
     if logo_path and Path(logo_path).exists():
-        # Horizontal logo with wave + WaveTies text
-        logo = Image(logo_path, width=55*mm, height=34*mm)
-        left_cell.append(logo)
+        logo = Image(logo_path, width=52*mm, height=32*mm)
+        logo.hAlign = "CENTER"
+        brand_rows = [[logo]]
         if COMPANY.get("tagline"):
-            left_cell.append(Spacer(1, 1*mm))
-            left_cell.append(Paragraph(COMPANY["tagline"], styles["BillToLabel"]))
+            brand_rows.append([Paragraph(COMPANY["tagline"], styles["Tagline"])])
+        left = Table(brand_rows, colWidths=[55*mm])
+        left.setStyle(TableStyle([
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 0),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 1), (-1, 1), 1),
+        ]))
     else:
-        left_cell.append(Paragraph(COMPANY.get("short_name") or COMPANY["name"], styles["CompanyName"]))
+        parts = [Paragraph(COMPANY.get("short_name") or COMPANY["name"], styles["CompanyName"])]
         if COMPANY.get("tagline"):
-            left_cell.append(Paragraph(COMPANY["tagline"], styles["BillToLabel"]))
+            parts.append(Paragraph(COMPANY["tagline"], styles["Tagline"]))
+        left = parts
 
     right = [Paragraph("INVOICE", styles["InvoiceTitle"])]
 
-    t = Table([[left_cell, right]], colWidths=[120*mm, 60*mm])
+    t = Table([[left, right]], colWidths=[100*mm, 80*mm])
     t.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("ALIGN", (0, 0), (0, 0), "LEFT"),
         ("ALIGN", (1, 0), (1, 0), "RIGHT"),
     ]))
     return t
