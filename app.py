@@ -702,8 +702,8 @@ def download_pdf(invoice_no):
         return redirect(url_for("invoice_list"))
     safe_name = invoice_no.replace("/", "-")
     pdf_path = OUTPUT_DIR / f"Invoice_{safe_name}.pdf"
-    if not pdf_path.exists():
-        generate_invoice(inv, str(pdf_path))
+    # Always regenerate so logo/branding updates apply immediately
+    generate_invoice(inv, str(pdf_path))
     return send_file(pdf_path, as_attachment=True, download_name=f"Invoice_{safe_name}.pdf", mimetype="application/pdf")
 
 
@@ -844,8 +844,7 @@ def email_invoice(invoice_no):
         try:
             safe_name = invoice_no.replace("/", "-")
             pdf_path = OUTPUT_DIR / f"Invoice_{safe_name}.pdf"
-            if not pdf_path.exists():
-                generate_invoice(inv, str(pdf_path))
+            generate_invoice(inv, str(pdf_path))
 
             msg = MIMEMultipart()
             msg["From"] = smtp.get("from_email") or smtp["user"]

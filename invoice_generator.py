@@ -200,36 +200,31 @@ def create_styles():
 
 
 def build_header(styles):
-    # Logo + name stacked on the left
-    left_parts = []
-    if COMPANY.get("logo_path") and Path(COMPANY["logo_path"]).exists():
-        logo = Image(COMPANY["logo_path"], width=42*mm, height=26*mm)
-        left_parts.append(logo)
-
-    name_block = [
-        Paragraph(COMPANY["name"], styles["CompanyName"]),
-    ]
-    if COMPANY.get("tagline"):
-        name_block.append(Paragraph(COMPANY["tagline"], styles["BillToLabel"]))
-
-    if left_parts:
-        # logo beside name
-        left = Table([[left_parts[0], name_block]], colWidths=[24*mm, 85*mm])
-        left.setStyle(TableStyle([
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-            ("LEFTPADDING", (0, 0), (-1, -1), 0),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ]))
+    """Header: full logo (includes WaveTies wordmark) + INVOICE title.
+    Do not print the long legal name beside the logo — it duplicates and looks messy.
+    """
+    left_cell = []
+    logo_path = COMPANY.get("logo_path") or ""
+    if logo_path and Path(logo_path).exists():
+        # Horizontal logo with wave + WaveTies text
+        logo = Image(logo_path, width=55*mm, height=34*mm)
+        left_cell.append(logo)
+        if COMPANY.get("tagline"):
+            left_cell.append(Spacer(1, 1*mm))
+            left_cell.append(Paragraph(COMPANY["tagline"], styles["BillToLabel"]))
     else:
-        left = name_block
+        left_cell.append(Paragraph(COMPANY.get("short_name") or COMPANY["name"], styles["CompanyName"]))
+        if COMPANY.get("tagline"):
+            left_cell.append(Paragraph(COMPANY["tagline"], styles["BillToLabel"]))
 
     right = [Paragraph("INVOICE", styles["InvoiceTitle"])]
 
-    t = Table([[left, right]], colWidths=[110*mm, 70*mm])
+    t = Table([[left_cell, right]], colWidths=[120*mm, 60*mm])
     t.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
     ]))
     return t
 
