@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+{% block title %}Expenses – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;">
+  <div>
+    <h1 style="margin:0;">Expenses</h1>
+    <p style="color:var(--muted);margin:0.25rem 0 0;font-size:0.9rem;">
+      Day-to-day costs, office, operations, and worker payments
+    </p>
+  </div>
+  <form method="get" style="display:flex;gap:0.5rem;align-items:center;">
+    <label style="font-size:0.85rem;color:var(--muted);">Month</label>
+    <input type="month" name="month" value="{{ month }}" onchange="this.form.submit()">
+  </form>
+</div>
+
+<div class="kpi-grid" style="margin-bottom:1.25rem;">
+  <div class="kpi-card">
+    <div class="kpi-label">Total (USD eq.) — {{ month }}</div>
+    <div class="kpi-value">${{ '%.2f'|format(summary.total_usd) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Paid (USD)</div>
+    <div class="kpi-value" style="color:#0a7;">${{ '%.2f'|format(summary.paid_usd) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Pending (USD)</div>
+    <div class="kpi-value" style="color:#c60;">${{ '%.2f'|format(summary.pending_usd) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Records this view</div>
+    <div class="kpi-value">{{ expenses|length }}</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Record expense / wage payment</div>
+  <form method="post">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Date *</label>
+        <input type="date" name="expense_date" required>
+      </div>
+      <div class="form-group">
+        <label>Category *</label>
+        <select name="category" required>
+          {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Subcategory</label>
+        <input name="subcategory" placeholder="e.g. September salary, ECG bill">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2;">
+        <label>Description *</label>
+        <input name="description" required placeholder="What was paid for">
+      </div>
+      <div class="form-group">
+        <label>Payee (person / vendor)</label>
+        <input name="payee" placeholder="Staff name or supplier">
+      </div>
+      <div class="form-group">
+        <label>Link to system user (optional)</label>
+        <select name="worker_username">
+          <option value="">— none —</option>
+          {% for u in users %}
+          <option value="{{ u.username }}">{{ u.name }} ({{ u.username }})</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Currency *</label>
+        <select name="currency" id="expCurrency" required>
+          {% for c in currencies %}
+          <option value="{{ c }}" {% if c == 'GHS' %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Amount *</label>
+        <input type="number" step="0.01" name="amount" id="expAmount" value="0" required>
+      </div>
+      <div class="form-group">
+        <label>USD equivalent *</label>
+        <input type="number" step="0.01" name="amount_usd" id="expAmountUsd" value="0" required>
+        <small style="color:var(--muted);font-size:0.75rem;">For reporting across currencies</small>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Payment method</label>
+        <select name="payment_method">
+          {% for m in methods %}<option>{{ m }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Reference / receipt #</label>
+        <input name="reference" placeholder="MoMo ID, bank ref…">
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select name="status">
+          <option>Paid</option>
+          <option>Pending</option>
+          <option>Approved</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2;">
+        <label>Notes</label>
+        <input name="notes">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save expense</button>
+  </form>
+</div>
+
+{% if summary.by_category %}
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">By category ({{ month }})</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Category</th><th>Currency</th><th>Total</th><th>USD eq.</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for row in summary.by_category %}
+        <tr>
+          <td>{{ row.category }}</td>
+          <td>{{ row.currency }}</td>
+          <td>{{ '%.2f'|format(row.total or 0) }}</td>
+          <td>${{ '%.2f'|format(row.total_usd or 0) }}</td>
+          <td>{{ row.n }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Expense register ({{ expenses|length }}{% if all_count != expenses|length %} of {{ all_count }}{% endif %})</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Date</th><th>Category</th><th>Description</th><th>Payee</th>
+          <th>Amount</th><th>USD</th><th>Method</th><th>Status</th><th>By</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for e in expenses %}
+        <tr>
+          <td><b>{{ e.expense_id }}</b></td>
+          <td>{{ e.expense_date }}</td>
+          <td>{{ e.category }}{% if e.subcategory %}<br><small style="color:var(--muted)">{{ e.subcategory }}</small>{% endif %}</td>
+          <td>{{ e.description }}</td>
+          <td>{{ e.payee or e.worker_username or '—' }}</td>
+          <td>{{ e.currency }} {{ '%.2f'|format(e.amount or 0) }}</td>
+          <td>${{ '%.2f'|format(e.amount_usd or 0) }}</td>
+          <td>{{ e.payment_method }}</td>
+          <td>
+            <form method="post" action="{{ url_for('ops_expense_status', expense_id=e.expense_id) }}" style="display:inline;">
+              <select name="status" onchange="this.form.submit()" style="font-size:0.8rem;padding:0.2rem;">
+                {% for s in ['Paid','Pending','Approved'] %}
+                <option value="{{ s }}" {% if e.status==s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </select>
+            </form>
+          </td>
+          <td>{{ e.recorded_by or '—' }}</td>
+          <td>
+            {% if session.get('role') in ['admin','manager'] %}
+            <form method="post" action="{{ url_for('ops_expense_delete', expense_id=e.expense_id) }}" onsubmit="return confirm('Delete {{ e.expense_id }}?');">
+              <button type="submit" class="btn btn-sm btn-outline" style="color:#c00;">Delete</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11" style="text-align:center;color:var(--muted);">No expenses for this month yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function(){
+  var cur = document.getElementById('expCurrency');
+  var amt = document.getElementById('expAmount');
+  var usd = document.getElementById('expAmountUsd');
+  function sync(){
+    if (cur && cur.value === 'USD' && amt && usd) usd.value = amt.value;
+  }
+  if (cur) cur.addEventListener('change', sync);
+  if (amt) amt.addEventListener('input', sync);
+})();
+</script>
+{% endblock %}

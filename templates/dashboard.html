@@ -85,7 +85,30 @@
 {% endif %}
 
 <div class="card">
-  <div class="card-title">Recent Invoices</div>
+  
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Cash position this month ({{ exp_month }})</div>
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <div class="kpi-label">Income received (USD)</div>
+      <div class="kpi-value" style="color:#0a7;">${{ '%.2f'|format(inc_summary.received_usd if inc_summary else 0) }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Expenses paid (USD)</div>
+      <div class="kpi-value">${{ '%.2f'|format(exp_summary.paid_usd if exp_summary else 0) }}</div>
+    </div>
+    <div class="kpi-card">
+      <div class="kpi-label">Net (income − expenses)</div>
+      <div class="kpi-value">${{ '%.2f'|format(pnl.net_usd if pnl else 0) }}</div>
+    </div>
+  </div>
+  <p style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+    <a href="{{ url_for('ops_incomes') }}" class="btn btn-sm btn-outline">Income →</a>
+    <a href="{{ url_for('ops_expenses') }}" class="btn btn-sm btn-outline">Expenses →</a>
+  </p>
+</div>
+
+<div class="card-title">Recent Invoices</div>
   {% if invoices %}
   <table>
     <thead>

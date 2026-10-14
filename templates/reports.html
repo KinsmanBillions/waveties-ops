@@ -1,5 +1,60 @@
 {% extends "base.html" %}
-{% block title %}Reports – WaveTies{% endblock %}
+{% block title %}Reports – WaveTies
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Expenses overview</div>
+  <p style="color:var(--muted);font-size:0.9rem;">This month (USD eq.): <b>${{ '%.2f'|format(exp_month.total_usd if exp_month else 0) }}</b>
+    · All time: <b>${{ '%.2f'|format(exp_all.total_usd if exp_all else 0) }}</b>
+    · <a href="{{ url_for('ops_expenses') }}">Open expenses</a></p>
+  {% if exp_month and exp_month.by_category %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Category</th><th>Currency</th><th>Total</th><th>USD</th><th>#</th></tr></thead>
+      <tbody>
+      {% for row in exp_month.by_category %}
+        <tr>
+          <td>{{ row.category }}</td>
+          <td>{{ row.currency }}</td>
+          <td>{{ '%.2f'|format(row.total or 0) }}</td>
+          <td>${{ '%.2f'|format(row.total_usd or 0) }}</td>
+          <td>{{ row.n }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Income &amp; profit (this month)</div>
+  <p style="color:var(--muted);font-size:0.9rem;">
+    Income received: <b>${{ '%.2f'|format(inc_month.received_usd if inc_month else 0) }}</b>
+    · Expenses paid: <b>${{ '%.2f'|format(exp_month.paid_usd if exp_month else 0) }}</b>
+    · Net: <b>${{ '%.2f'|format(pnl.net_usd if pnl else 0) }}</b>
+  </p>
+  {% if inc_month and inc_month.by_category %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Income category</th><th>Currency</th><th>Total</th><th>USD</th><th>#</th></tr></thead>
+      <tbody>
+      {% for row in inc_month.by_category %}
+        <tr>
+          <td>{{ row.category }}</td>
+          <td>{{ row.currency }}</td>
+          <td>{{ '%.2f'|format(row.total or 0) }}</td>
+          <td>${{ '%.2f'|format(row.total_usd or 0) }}</td>
+          <td>{{ row.n }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <p style="margin-top:0.5rem;"><a href="{{ url_for('ops_incomes') }}">Open income register →</a></p>
+</div>
+
+{% endblock %}
 
 {% block content %}
 <div class="page-header">
