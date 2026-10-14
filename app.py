@@ -503,12 +503,27 @@ def dashboard():
         "outstanding": outstanding,
     }
     ops_stats = ops.ops_kpis()
+    month = datetime.now().strftime("%Y-%m")
+    try:
+        exp_summary = ops.expense_summary(month)
+    except Exception:
+        exp_summary = {"total_usd": 0, "paid_usd": 0, "pending_usd": 0, "by_category": []}
+    try:
+        inc_summary = ops.income_summary(month)
+        pnl = ops.pnl_summary(month)
+    except Exception:
+        inc_summary = {"total_usd": 0, "received_usd": 0, "pending_usd": 0, "by_category": []}
+        pnl = {"income_usd": 0, "expense_usd": 0, "net_usd": 0}
     return render_template(
         "dashboard.html",
         invoices=sorted_invs[:15],
         stats=stats,
         ops_stats=ops_stats,
         recent_orders=ops.order_list()[:8],
+        exp_summary=exp_summary,
+        inc_summary=inc_summary,
+        pnl=pnl,
+        exp_month=month,
         company=COMPANY,
         user=session,
     )
@@ -543,11 +558,28 @@ def reports():
             by_transport[t]["total"] += item.get("amount", 0)
 
     months = sorted(by_month.keys(), reverse=True)
+    try:
+        exp_all = ops.expense_summary()
+        exp_month = ops.expense_summary(datetime.now().strftime("%Y-%m"))
+        inc_all = ops.income_summary()
+        inc_month = ops.income_summary(datetime.now().strftime("%Y-%m"))
+        pnl = ops.pnl_summary(datetime.now().strftime("%Y-%m"))
+    except Exception:
+        exp_all = {"total_usd": 0, "by_category": []}
+        exp_month = exp_all
+        inc_all = exp_all
+        inc_month = exp_all
+        pnl = {"income_usd": 0, "expense_usd": 0, "net_usd": 0}
     return render_template(
         "reports.html",
         by_month=[(m, by_month[m]) for m in months],
         by_worker=sorted(by_worker.items(), key=lambda x: -x[1]["total"]),
         by_transport=sorted(by_transport.items(), key=lambda x: -x[1]["total"]),
+        exp_all=exp_all,
+        exp_month=exp_month,
+        inc_all=inc_all,
+        inc_month=inc_month,
+        pnl=pnl,
         company=COMPANY,
         user=session,
     )
@@ -1106,7 +1138,7 @@ def admin_reset_data():
         save_db(db)
         # Ops tables
         with ops.get_conn() as conn:
-            for table in ("payments", "shipments", "rmb_txns", "sourcing", "orders"):
+            for table in ("payments", "shipments", "rmb_txns", "sourcing", "orders", "expenses", "incomes"):
                 conn.execute(f"DELETE FROM {table}")
             if clear_clients:
                 conn.execute("DELETE FROM clients")
@@ -1751,6 +1783,184 @@ def ops_sourcing_status(sourcing_id):
 
 
 # ──────────────────────────────────────────────────────────────
+
+
+# ── Expenses (office, ops, salaries, day-to-day) ─────────────
+@app.route("/ops/expenses", methods=["GET", "POST"])
+@login_required
+@finance_required
+def ops_expenses():
+    """Record and list business expenses, wages, and operational costs."""
+    users = list_users()
+    if request.method == "POST":
+        try:
+            amount = float(request.form.get("amount", 0) or 0)
+            amount_usd = float(request.form.get("amount_usd", 0) or 0)
+            currency = (request.form.get("currency") or "GHS").strip().upper()
+            if currency == "USD" and amount_usd <= 0:
+                amount_usd = amount
+            eid = ops.add_expense({
+                "expense_date": request.form.get("expense_date") or datetime.now().strftime("%Y-%m-%d"),
+                "category": request.form.get("category") or "Miscellaneous",
+                "subcategory": (request.form.get("subcategory") or "").strip(),
+                "description": (request.form.get("description") or "").strip(),
+                "payee": (request.form.get("payee") or "").strip(),
+                "worker_username": (request.form.get("worker_username") or "").strip(),
+                "amount": amount,
+                "currency": currency,
+                "amount_usd": amount_usd,
+                "payment_method": request.form.get("payment_method") or "Cash",
+                "reference": (request.form.get("reference") or "").strip(),
+                "status": request.form.get("status") or "Paid",
+                "recorded_by": session.get("name") or session.get("username"),
+                "notes": (request.form.get("notes") or "").strip(),
+            })
+            flash(f"Expense {eid} recorded.", "success")
+        except Exception as e:
+            flash(f"Could not save expense: {e}", "danger")
+        return redirect(url_for("ops_expenses"))
+
+    month = request.args.get("month") or datetime.now().strftime("%Y-%m")
+    expenses = ops.list_expenses()
+    if month:
+        expenses_view = [e for e in expenses if (e.get("expense_date") or "").startswith(month)]
+    else:
+        expenses_view = expenses
+    summary = ops.expense_summary(month)
+    currencies = ["GHS", "USD", "EUR", "GBP", "CNY", "NGN"]
+    try:
+        from invoice_generator import COMPANY as _c
+        # optional: extend from ops if CURRENCIES exists
+    except Exception:
+        pass
+    return render_template(
+        "ops_expenses.html",
+        expenses=expenses_view,
+        all_count=len(expenses),
+        summary=summary,
+        month=month,
+        categories=ops.EXPENSE_CATEGORIES,
+        methods=ops.EXPENSE_METHODS,
+        currencies=currencies,
+        users=users,
+        company=COMPANY,
+        user=session,
+    )
+
+
+@app.route("/ops/expenses/<expense_id>/delete", methods=["POST"])
+@login_required
+@manage_required
+def ops_expense_delete(expense_id):
+    row = ops.get_one("expenses", "expense_id", expense_id)
+    if not row:
+        flash("Expense not found.", "danger")
+        return redirect(url_for("ops_expenses"))
+    ops.delete("expenses", "expense_id", expense_id)
+    flash(f"Expense {expense_id} deleted.", "success")
+    return redirect(url_for("ops_expenses"))
+
+
+@app.route("/ops/expenses/<expense_id>/status", methods=["POST"])
+@login_required
+@finance_required
+def ops_expense_status(expense_id):
+    row = ops.get_one("expenses", "expense_id", expense_id)
+    if not row:
+        flash("Expense not found.", "danger")
+        return redirect(url_for("ops_expenses"))
+    st = request.form.get("status") or row.get("status")
+    ops.update("expenses", "expense_id", expense_id, {"status": st})
+    flash(f"Expense {expense_id} marked {st}.", "success")
+    return redirect(url_for("ops_expenses"))
+
+
+
+
+# ── Income (fees, commissions, service revenue) ───────────────
+@app.route("/ops/incomes", methods=["GET", "POST"])
+@login_required
+@finance_required
+def ops_incomes():
+    """Record business income: freight fees, commissions, FX margin, etc."""
+    if request.method == "POST":
+        try:
+            amount = float(request.form.get("amount", 0) or 0)
+            amount_usd = float(request.form.get("amount_usd", 0) or 0)
+            currency = (request.form.get("currency") or "GHS").strip().upper()
+            if currency == "USD" and amount_usd <= 0:
+                amount_usd = amount
+            iid = ops.add_income({
+                "income_date": request.form.get("income_date") or datetime.now().strftime("%Y-%m-%d"),
+                "category": request.form.get("category") or "Other Operating Income",
+                "subcategory": (request.form.get("subcategory") or "").strip(),
+                "description": (request.form.get("description") or "").strip(),
+                "client_name": (request.form.get("client_name") or "").strip(),
+                "order_id": (request.form.get("order_id") or "").strip(),
+                "amount": amount,
+                "currency": currency,
+                "amount_usd": amount_usd,
+                "payment_method": request.form.get("payment_method") or "Bank Transfer",
+                "reference": (request.form.get("reference") or "").strip(),
+                "status": request.form.get("status") or "Received",
+                "recorded_by": session.get("name") or session.get("username"),
+                "notes": (request.form.get("notes") or "").strip(),
+            })
+            flash(f"Income {iid} recorded.", "success")
+        except Exception as e:
+            flash(f"Could not save income: {e}", "danger")
+        return redirect(url_for("ops_incomes"))
+
+    month = request.args.get("month") or datetime.now().strftime("%Y-%m")
+    incomes = ops.list_incomes()
+    incomes_view = [i for i in incomes if (i.get("income_date") or "").startswith(month)] if month else incomes
+    summary = ops.income_summary(month)
+    pnl = ops.pnl_summary(month)
+    orders = ops.order_list()[:100] if hasattr(ops, "order_list") else []
+    currencies = ["GHS", "USD", "EUR", "GBP", "CNY", "NGN"]
+    return render_template(
+        "ops_incomes.html",
+        incomes=incomes_view,
+        all_count=len(incomes),
+        summary=summary,
+        pnl=pnl,
+        month=month,
+        categories=ops.INCOME_CATEGORIES,
+        methods=ops.INCOME_METHODS,
+        currencies=currencies,
+        orders=orders,
+        company=COMPANY,
+        user=session,
+    )
+
+
+@app.route("/ops/incomes/<income_id>/delete", methods=["POST"])
+@login_required
+@manage_required
+def ops_income_delete(income_id):
+    row = ops.get_one("incomes", "income_id", income_id)
+    if not row:
+        flash("Income not found.", "danger")
+        return redirect(url_for("ops_incomes"))
+    ops.delete("incomes", "income_id", income_id)
+    flash(f"Income {income_id} deleted.", "success")
+    return redirect(url_for("ops_incomes"))
+
+
+@app.route("/ops/incomes/<income_id>/status", methods=["POST"])
+@login_required
+@finance_required
+def ops_income_status(income_id):
+    row = ops.get_one("incomes", "income_id", income_id)
+    if not row:
+        flash("Income not found.", "danger")
+        return redirect(url_for("ops_incomes"))
+    st = request.form.get("status") or row.get("status")
+    ops.update("incomes", "income_id", income_id, {"status": st})
+    flash(f"Income {income_id} marked {st}.", "success")
+    return redirect(url_for("ops_incomes"))
+
+
 if __name__ == "__main__":
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     port = int(os.environ.get("PORT", 5000))

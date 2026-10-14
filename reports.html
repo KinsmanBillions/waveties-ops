@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Reports – WaveTies
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Expenses overview</div>
+  <p style="color:var(--muted);font-size:0.9rem;">This month (USD eq.): <b>${{ '%.2f'|format(exp_month.total_usd if exp_month else 0) }}</b>
+    · All time: <b>${{ '%.2f'|format(exp_all.total_usd if exp_all else 0) }}</b>
+    · <a href="{{ url_for('ops_expenses') }}">Open expenses</a></p>
+  {% if exp_month and exp_month.by_category %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Category</th><th>Currency</th><th>Total</th><th>USD</th><th>#</th></tr></thead>
+      <tbody>
+      {% for row in exp_month.by_category %}
+        <tr>
+          <td>{{ row.category }}</td>
+          <td>{{ row.currency }}</td>
+          <td>{{ '%.2f'|format(row.total or 0) }}</td>
+          <td>${{ '%.2f'|format(row.total_usd or 0) }}</td>
+          <td>{{ row.n }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+
+
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Income &amp; profit (this month)</div>
+  <p style="color:var(--muted);font-size:0.9rem;">
+    Income received: <b>${{ '%.2f'|format(inc_month.received_usd if inc_month else 0) }}</b>
+    · Expenses paid: <b>${{ '%.2f'|format(exp_month.paid_usd if exp_month else 0) }}</b>
+    · Net: <b>${{ '%.2f'|format(pnl.net_usd if pnl else 0) }}</b>
+  </p>
+  {% if inc_month and inc_month.by_category %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Income category</th><th>Currency</th><th>Total</th><th>USD</th><th>#</th></tr></thead>
+      <tbody>
+      {% for row in inc_month.by_category %}
+        <tr>
+          <td>{{ row.category }}</td>
+          <td>{{ row.currency }}</td>
+          <td>{{ '%.2f'|format(row.total or 0) }}</td>
+          <td>${{ '%.2f'|format(row.total_usd or 0) }}</td>
+          <td>{{ row.n }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <p style="margin-top:0.5rem;"><a href="{{ url_for('ops_incomes') }}">Open income register →</a></p>
+</div>
+
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Reports</h1>
+</div>
+
+<div class="card">
+  <div class="card-title">By Month</div>
+  {% if by_month %}
+  <table>
+    <thead>
+      <tr>
+        <th>Month</th>
+        <th>Invoices</th>
+        <th>Total</th>
+        <th>Paid</th>
+        <th>Outstanding</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for month, d in by_month %}
+      <tr>
+        <td>{{ month }}</td>
+        <td>{{ d.count }}</td>
+        <td>GHS {{ "%.2f"|format(d.total) }}</td>
+        <td>GHS {{ "%.2f"|format(d.paid) }}</td>
+        <td>GHS {{ "%.2f"|format(d.outstanding) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:var(--muted);">No data yet.</p>
+  {% endif %}
+</div>
+
+<div class="form-row">
+  <div class="card">
+    <div class="card-title">By Worker</div>
+    {% if by_worker %}
+    <table>
+      <thead><tr><th>Worker</th><th>Invoices</th><th>Total</th></tr></thead>
+      <tbody>
+        {% for w, d in by_worker %}
+        <tr>
+          <td>{{ w }}</td>
+          <td>{{ d.count }}</td>
+          <td>GHS {{ "%.2f"|format(d.total) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--muted);">No data.</p>
+    {% endif %}
+  </div>
+  <div class="card">
+    <div class="card-title">By Transport</div>
+    {% if by_transport %}
+    <table>
+      <thead><tr><th>Mode</th><th>Lines</th><th>Amount</th></tr></thead>
+      <tbody>
+        {% for t, d in by_transport %}
+        <tr>
+          <td>{{ t }}</td>
+          <td>{{ d.count }}</td>
+          <td>GHS {{ "%.2f"|format(d.total) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p style="color:var(--muted);">No data.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

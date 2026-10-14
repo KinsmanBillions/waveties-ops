@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+{% block title %}Income – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;">
+  <div>
+    <h1 style="margin:0;">Income</h1>
+    <p style="color:var(--muted);margin:0.25rem 0 0;font-size:0.9rem;">
+      Freight fees, commissions, FX margin, and other operating income
+    </p>
+  </div>
+  <form method="get" style="display:flex;gap:0.5rem;align-items:center;">
+    <label style="font-size:0.85rem;color:var(--muted);">Month</label>
+    <input type="month" name="month" value="{{ month }}" onchange="this.form.submit()">
+  </form>
+</div>
+
+<div class="kpi-grid" style="margin-bottom:1.25rem;">
+  <div class="kpi-card">
+    <div class="kpi-label">Income (USD eq.) — {{ month }}</div>
+    <div class="kpi-value">${{ '%.2f'|format(summary.total_usd) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Received</div>
+    <div class="kpi-value" style="color:#0a7;">${{ '%.2f'|format(summary.received_usd) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Pending</div>
+    <div class="kpi-value" style="color:#c60;">${{ '%.2f'|format(summary.pending_usd) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Net vs expenses (USD)</div>
+    <div class="kpi-value" style="color:{% if pnl.net_usd >= 0 %}#0a7{% else %}#c00{% endif %};">
+      ${{ '%.2f'|format(pnl.net_usd) }}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-title">Record income</div>
+  <form method="post">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Date *</label>
+        <input type="date" name="income_date" required>
+      </div>
+      <div class="form-group">
+        <label>Category *</label>
+        <select name="category" required>
+          {% for c in categories %}<option value="{{ c }}">{{ c }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Subcategory</label>
+        <input name="subcategory" placeholder="e.g. Sea freight fee, October commission">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2;">
+        <label>Description *</label>
+        <input name="description" required placeholder="What the income is for">
+      </div>
+      <div class="form-group">
+        <label>Client name</label>
+        <input name="client_name" placeholder="Customer / company">
+      </div>
+      <div class="form-group">
+        <label>Related order ID</label>
+        <input name="order_id" list="orderList" placeholder="Optional WT-ORD-…">
+        <datalist id="orderList">
+          {% for o in orders %}<option value="{{ o.order_id }}">{% endfor %}
+        </datalist>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Currency *</label>
+        <select name="currency" id="incCurrency" required>
+          {% for c in currencies %}
+          <option value="{{ c }}" {% if c == 'GHS' %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Amount *</label>
+        <input type="number" step="0.01" name="amount" id="incAmount" value="0" required>
+      </div>
+      <div class="form-group">
+        <label>USD equivalent *</label>
+        <input type="number" step="0.01" name="amount_usd" id="incAmountUsd" value="0" required>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Payment method</label>
+        <select name="payment_method">
+          {% for m in methods %}<option>{{ m }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Reference / receipt #</label>
+        <input name="reference">
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select name="status">
+          <option>Received</option>
+          <option>Pending</option>
+          <option>Cleared</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2;">
+        <label>Notes</label>
+        <input name="notes">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save income</button>
+  </form>
+</div>
+
+{% if summary.by_category %}
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">By category ({{ month }})</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Category</th><th>Currency</th><th>Total</th><th>USD eq.</th><th>Count</th></tr></thead>
+      <tbody>
+        {% for row in summary.by_category %}
+        <tr>
+          <td>{{ row.category }}</td>
+          <td>{{ row.currency }}</td>
+          <td>{{ '%.2f'|format(row.total or 0) }}</td>
+          <td>${{ '%.2f'|format(row.total_usd or 0) }}</td>
+          <td>{{ row.n }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Income register ({{ incomes|length }}{% if all_count != incomes|length %} of {{ all_count }}{% endif %})</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Date</th><th>Category</th><th>Description</th><th>Client</th><th>Order</th>
+          <th>Amount</th><th>USD</th><th>Method</th><th>Status</th><th>By</th><th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in incomes %}
+        <tr>
+          <td><b>{{ i.income_id }}</b></td>
+          <td>{{ i.income_date }}</td>
+          <td>{{ i.category }}{% if i.subcategory %}<br><small style="color:var(--muted)">{{ i.subcategory }}</small>{% endif %}</td>
+          <td>{{ i.description }}</td>
+          <td>{{ i.client_name or '—' }}</td>
+          <td>{{ i.order_id or '—' }}</td>
+          <td>{{ i.currency }} {{ '%.2f'|format(i.amount or 0) }}</td>
+          <td>${{ '%.2f'|format(i.amount_usd or 0) }}</td>
+          <td>{{ i.payment_method }}</td>
+          <td>
+            <form method="post" action="{{ url_for('ops_income_status', income_id=i.income_id) }}" style="display:inline;">
+              <select name="status" onchange="this.form.submit()" style="font-size:0.8rem;padding:0.2rem;">
+                {% for s in ['Received','Pending','Cleared'] %}
+                <option value="{{ s }}" {% if i.status==s %}selected{% endif %}>{{ s }}</option>
+                {% endfor %}
+              </select>
+            </form>
+          </td>
+          <td>{{ i.recorded_by or '—' }}</td>
+          <td>
+            {% if session.get('role') in ['admin','manager'] %}
+            <form method="post" action="{{ url_for('ops_income_delete', income_id=i.income_id) }}" onsubmit="return confirm('Delete {{ i.income_id }}?');">
+              <button type="submit" class="btn btn-sm btn-outline" style="color:#c00;">Delete</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="12" style="text-align:center;color:var(--muted);">No income for this month yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(function(){
+  var cur = document.getElementById('incCurrency');
+  var amt = document.getElementById('incAmount');
+  var usd = document.getElementById('incAmountUsd');
+  function sync(){ if (cur && cur.value === 'USD' && amt && usd) usd.value = amt.value; }
+  if (cur) cur.addEventListener('change', sync);
+  if (amt) amt.addEventListener('input', sync);
+})();
+</script>
+{% endblock %}

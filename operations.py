@@ -144,6 +144,44 @@ def init_ops_db():
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         )""")
         c.execute("""
+        CREATE TABLE IF NOT EXISTS expenses (
+            expense_id TEXT PRIMARY KEY,
+            expense_date TEXT,
+            category TEXT NOT NULL,
+            subcategory TEXT,
+            description TEXT,
+            payee TEXT,
+            worker_username TEXT,
+            amount REAL DEFAULT 0,
+            currency TEXT DEFAULT 'GHS',
+            amount_usd REAL DEFAULT 0,
+            payment_method TEXT,
+            reference TEXT,
+            status TEXT DEFAULT 'Paid',
+            recorded_by TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS incomes (
+            income_id TEXT PRIMARY KEY,
+            income_date TEXT,
+            category TEXT NOT NULL,
+            subcategory TEXT,
+            description TEXT,
+            client_name TEXT,
+            order_id TEXT,
+            amount REAL DEFAULT 0,
+            currency TEXT DEFAULT 'GHS',
+            amount_usd REAL DEFAULT 0,
+            payment_method TEXT,
+            reference TEXT,
+            status TEXT DEFAULT 'Received',
+            recorded_by TEXT,
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        c.execute("""
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
@@ -326,3 +364,215 @@ def set_rmb_rate_for(currency, rate):
     set_setting("rmb_rates_json", json.dumps(rates))
     if currency == "USD":
         set_setting("rmb_rate", str(rate))
+
+
+# ── Expenses ──────────────────────────────────────────────────
+EXPENSE_CATEGORIES = [
+    "Salaries & Wages",
+    "Office Rent",
+    "Utilities",
+    "Internet & Phone",
+    "Office Supplies",
+    "Transport & Fuel",
+    "Marketing & Ads",
+    "Software & Subscriptions",
+    "Bank Charges",
+    "Professional Fees",
+    "Repairs & Maintenance",
+    "Staff Welfare",
+    "Customs & Clearing (ops)",
+    "Warehouse & Storage",
+    "Miscellaneous",
+]
+
+EXPENSE_METHODS = [
+    "Cash", "MTN MoMo", "Telecel Cash", "Bank Transfer", "Cheque", "Card", "Other"
+]
+
+
+def next_expense_id():
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT expense_id FROM expenses ORDER BY expense_id DESC LIMIT 1"
+        ).fetchone()
+    if not row:
+        return "EXP-0001"
+    try:
+        n = int(str(row["expense_id"]).split("-")[-1])
+        return f"EXP-{n+1:04d}"
+    except Exception:
+        return f"EXP-{int(__import__('time').time()) % 10000:04d}"
+
+
+def list_expenses(limit=500):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM expenses ORDER BY expense_date DESC, created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_expense(data: dict):
+    eid = data.get("expense_id") or next_expense_id()
+    data = dict(data)
+    data["expense_id"] = eid
+    cols = [
+        "expense_id", "expense_date", "category", "subcategory", "description",
+        "payee", "worker_username", "amount", "currency", "amount_usd",
+        "payment_method", "reference", "status", "recorded_by", "notes",
+    ]
+    vals = [data.get(c) for c in cols]
+    with get_conn() as conn:
+        conn.execute(
+            f"INSERT INTO expenses ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
+            vals,
+        )
+    return eid
+
+
+def expense_summary(month=None):
+    """Return totals by category and overall. month: 'YYYY-MM' or None for all."""
+    with get_conn() as conn:
+        if month:
+            rows = conn.execute(
+                "SELECT category, currency, SUM(amount) as total, SUM(amount_usd) as total_usd, COUNT(*) as n "
+                "FROM expenses WHERE expense_date LIKE ? GROUP BY category, currency",
+                (f"{month}%",),
+            ).fetchall()
+            paid = conn.execute(
+                "SELECT SUM(amount_usd) FROM expenses WHERE status='Paid' AND expense_date LIKE ?",
+                (f"{month}%",),
+            ).fetchone()[0] or 0
+            pending = conn.execute(
+                "SELECT SUM(amount_usd) FROM expenses WHERE status!='Paid' AND expense_date LIKE ?",
+                (f"{month}%",),
+            ).fetchone()[0] or 0
+        else:
+            rows = conn.execute(
+                "SELECT category, currency, SUM(amount) as total, SUM(amount_usd) as total_usd, COUNT(*) as n "
+                "FROM expenses GROUP BY category, currency"
+            ).fetchall()
+            paid = conn.execute(
+                "SELECT SUM(amount_usd) FROM expenses WHERE status='Paid'"
+            ).fetchone()[0] or 0
+            pending = conn.execute(
+                "SELECT SUM(amount_usd) FROM expenses WHERE status!='Paid'"
+            ).fetchone()[0] or 0
+    return {
+        "by_category": [dict(r) for r in rows],
+        "paid_usd": float(paid),
+        "pending_usd": float(pending),
+        "total_usd": float(paid) + float(pending),
+    }
+
+
+# ── Income ───────────────────────────────────────────────────
+INCOME_CATEGORIES = [
+    "Freight & Shipping Fees",
+    "Sourcing / Buy-for-Me Commission",
+    "RMB / FX Margin",
+    "Documentation & Handling",
+    "Customs Support Fees",
+    "Warehouse & Storage",
+    "Packing & Insurance",
+    "Consultation & Agency",
+    "Client Service Charge",
+    "Other Operating Income",
+]
+
+INCOME_METHODS = [
+    "Cash", "MTN MoMo", "Telecel Cash", "Bank Transfer", "Cheque", "Card", "Other"
+]
+
+
+def next_income_id():
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT income_id FROM incomes ORDER BY income_id DESC LIMIT 1"
+        ).fetchone()
+    if not row:
+        return "INC-0001"
+    try:
+        n = int(str(row["income_id"]).split("-")[-1])
+        return f"INC-{n+1:04d}"
+    except Exception:
+        return f"INC-{int(__import__('time').time()) % 10000:04d}"
+
+
+def list_incomes(limit=500):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM incomes ORDER BY income_date DESC, created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_income(data: dict):
+    iid = data.get("income_id") or next_income_id()
+    data = dict(data)
+    data["income_id"] = iid
+    cols = [
+        "income_id", "income_date", "category", "subcategory", "description",
+        "client_name", "order_id", "amount", "currency", "amount_usd",
+        "payment_method", "reference", "status", "recorded_by", "notes",
+    ]
+    vals = [data.get(c) for c in cols]
+    with get_conn() as conn:
+        conn.execute(
+            f"INSERT INTO incomes ({', '.join(cols)}) VALUES ({', '.join('?' for _ in cols)})",
+            vals,
+        )
+    return iid
+
+
+def income_summary(month=None):
+    with get_conn() as conn:
+        if month:
+            rows = conn.execute(
+                "SELECT category, currency, SUM(amount) as total, SUM(amount_usd) as total_usd, COUNT(*) as n "
+                "FROM incomes WHERE income_date LIKE ? GROUP BY category, currency",
+                (f"{month}%",),
+            ).fetchall()
+            received = conn.execute(
+                "SELECT SUM(amount_usd) FROM incomes WHERE status IN ('Received','Cleared') AND income_date LIKE ?",
+                (f"{month}%",),
+            ).fetchone()[0] or 0
+            pending = conn.execute(
+                "SELECT SUM(amount_usd) FROM incomes WHERE status NOT IN ('Received','Cleared') AND income_date LIKE ?",
+                (f"{month}%",),
+            ).fetchone()[0] or 0
+        else:
+            rows = conn.execute(
+                "SELECT category, currency, SUM(amount) as total, SUM(amount_usd) as total_usd, COUNT(*) as n "
+                "FROM incomes GROUP BY category, currency"
+            ).fetchall()
+            received = conn.execute(
+                "SELECT SUM(amount_usd) FROM incomes WHERE status IN ('Received','Cleared')"
+            ).fetchone()[0] or 0
+            pending = conn.execute(
+                "SELECT SUM(amount_usd) FROM incomes WHERE status NOT IN ('Received','Cleared')"
+            ).fetchone()[0] or 0
+    return {
+        "by_category": [dict(r) for r in rows],
+        "received_usd": float(received),
+        "pending_usd": float(pending),
+        "total_usd": float(received) + float(pending),
+    }
+
+
+def pnl_summary(month=None):
+    """Simple profit snapshot: income received vs expenses paid (USD eq.)."""
+    inc = income_summary(month)
+    exp = expense_summary(month)
+    income = inc.get("received_usd") or 0
+    expense = exp.get("paid_usd") or 0
+    return {
+        "income_usd": income,
+        "expense_usd": expense,
+        "net_usd": income - expense,
+        "income_pending_usd": inc.get("pending_usd") or 0,
+        "expense_pending_usd": exp.get("pending_usd") or 0,
+        "month": month,
+    }
