@@ -724,6 +724,115 @@ def view_invoice(invoice_no):
     )
 
 
+@app.route("/invoices/<path:invoice_no>/edit", methods=["GET", "POST"])
+@login_required
+@manage_required
+def edit_invoice(invoice_no):
+    """Admin/Manager: edit invoice header, lines, payments, and receiving details."""
+    db = load_db()
+    inv = db.get("invoices", {}).get(invoice_no)
+    if not inv:
+        flash("Invoice not found.", "danger")
+        return redirect(url_for("invoice_list"))
+
+    if request.method == "POST":
+        try:
+            customer_name = request.form.get("customer_name", "").strip()
+            if not customer_name:
+                flash("Customer name is required.", "danger")
+                return redirect(url_for("edit_invoice", invoice_no=invoice_no))
+
+            trackings = request.form.getlist("tracking[]")
+            item_names = request.form.getlist("item_name[]")
+            transports = request.form.getlist("transport[]")
+            boxes_list = request.form.getlist("boxes[]")
+            weights = request.form.getlist("weight_kg[]")
+            vols = request.form.getlist("vol_cbm[]")
+            order_nos = request.form.getlist("order_number[]")
+            amounts = request.form.getlist("amount[]")
+
+            items = []
+            for i in range(len(trackings)):
+                if not (trackings[i] or "").strip() and not (amounts[i] if i < len(amounts) else ""):
+                    continue
+                if not (trackings[i] or "").strip():
+                    continue
+                items.append({
+                    "tracking": trackings[i].strip(),
+                    "item_name": item_names[i].strip() if i < len(item_names) else "Goods",
+                    "transport": transports[i].strip() if i < len(transports) else "SEA_FREIGHT",
+                    "boxes": int(float(boxes_list[i] or 1)) if i < len(boxes_list) else 1,
+                    "weight_kg": float(weights[i] or 0) if i < len(weights) else 0,
+                    "vol_cbm": float(vols[i] or 0) if i < len(vols) else 0,
+                    "order_number": order_nos[i].strip() if i < len(order_nos) else "",
+                    "amount": float(amounts[i] or 0) if i < len(amounts) else 0,
+                })
+            if not items:
+                flash("At least one line item is required.", "danger")
+                return redirect(url_for("edit_invoice", invoice_no=invoice_no))
+
+            tax = float(request.form.get("tax", 0) or 0)
+            paid = float(request.form.get("paid", 0) or 0)
+            subtotal = round(sum(it["amount"] for it in items), 2)
+            total = round(subtotal + tax, 2)
+            balance_due = round(max(0, total - paid), 2)
+            currency = (request.form.get("currency") or inv.get("currency") or "USD").strip().upper()
+
+            inv["customer_name"] = customer_name
+            inv["customer_email"] = request.form.get("customer_email", "").strip()
+            inv["customer_phone"] = request.form.get("customer_phone", "").strip()
+            inv["currency"] = currency
+            inv["invoice_date"] = request.form.get("invoice_date") or inv.get("invoice_date")
+            inv["due_date"] = request.form.get("due_date") or inv.get("due_date")
+            inv["items"] = items
+            inv["subtotal"] = subtotal
+            inv["tax"] = tax
+            inv["total"] = total
+            inv["paid"] = paid
+            inv["balance_due"] = balance_due
+            inv["momo_provider"] = (request.form.get("momo_provider") or inv.get("momo_provider") or "TELECEL CASH").strip()
+            inv["momo"] = (request.form.get("momo") or "").strip()
+            inv["bank_lines"] = [
+                ln.strip()
+                for ln in (request.form.get("bank_details") or "").splitlines()
+                if ln.strip()
+            ]
+            inv["contact_phone"] = (request.form.get("contact_phone") or "").strip()
+            inv["notes"] = (request.form.get("notes") or "").strip()
+            inv["updated_at"] = datetime.now().isoformat(timespec="seconds")
+            inv["updated_by"] = session.get("username") or session.get("name")
+
+            db["invoices"][invoice_no] = inv
+            save_db(db)
+
+            # Force PDF rebuild
+            safe_name = invoice_no.replace("/", "-")
+            pdf_path = OUTPUT_DIR / f"Invoice_{safe_name}.pdf"
+            try:
+                generate_invoice(inv, str(pdf_path))
+            except Exception:
+                pass
+
+            flash(f"Invoice {invoice_no} updated.", "success")
+            return redirect(url_for("view_invoice", invoice_no=invoice_no))
+        except Exception as e:
+            flash(f"Could not update invoice: {e}", "danger")
+            return redirect(url_for("edit_invoice", invoice_no=invoice_no))
+
+    ra = load_receiving_accounts()
+    bank_text = "\n".join(inv.get("bank_lines") or [])
+    return render_template(
+        "edit_invoice.html",
+        inv=inv,
+        invoice_no=invoice_no,
+        bank_text=bank_text,
+        company=COMPANY,
+        user=session,
+        currencies=CURRENCIES,
+        providers=["TELECEL CASH", "MTN MOMO", "AT MONEY", "OTHER"],
+    )
+
+
 @app.route("/invoices/<path:invoice_no>/pdf")
 @login_required
 def download_pdf(invoice_no):

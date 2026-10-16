@@ -34,6 +34,7 @@
     <a href="https://wa.me/?text={{ wa_text|urlencode }}" target="_blank" class="btn btn-outline">WhatsApp</a>
     <a href="{{ url_for('regenerate_pdf', invoice_no=invoice_no) }}" class="btn btn-outline">Regenerate</a>
     {% if session.get('role') in ['admin', 'manager'] %}
+    <a href="{{ url_for('edit_invoice', invoice_no=invoice_no) }}" class="btn btn-navy">Edit Invoice</a>
     <form method="post" action="{{ url_for('delete_invoice', invoice_no=invoice_no) }}" style="display:inline;"
           onsubmit="return confirm('Delete invoice {{ invoice_no }} permanently?');">
       <button type="submit" class="btn btn-outline" style="color:var(--danger);">Delete Invoice</button>
