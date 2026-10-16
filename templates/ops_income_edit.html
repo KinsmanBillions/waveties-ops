@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ i.income_id }} – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1 style="margin:0;">Edit income {{ i.income_id }}</h1>
+  <p style="color:var(--muted);margin:0.25rem 0 0;"><a href="{{ url_for('ops_incomes') }}">← Back to income</a></p>
+</div>
+<div class="card">
+  <form method="post">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Date *</label>
+        <input type="date" name="income_date" value="{{ i.income_date }}" required>
+      </div>
+      <div class="form-group">
+        <label>Category *</label>
+        <select name="category" required>
+          {% for c in categories %}
+          <option value="{{ c }}" {% if i.category==c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Subcategory</label>
+        <input name="subcategory" value="{{ i.subcategory or '' }}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" style="flex:2;">
+        <label>Description *</label>
+        <input name="description" value="{{ i.description or '' }}" required>
+      </div>
+      <div class="form-group">
+        <label>Client name</label>
+        <input name="client_name" value="{{ i.client_name or '' }}">
+      </div>
+      <div class="form-group">
+        <label>Order ID</label>
+        <input name="order_id" value="{{ i.order_id or '' }}" list="orderList">
+        <datalist id="orderList">
+          {% for o in orders %}<option value="{{ o.order_id }}">{% endfor %}
+        </datalist>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Currency *</label>
+        <select name="currency" required>
+          {% for c in currencies %}
+          <option value="{{ c }}" {% if i.currency==c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Amount *</label>
+        <input type="number" step="0.01" name="amount" value="{{ i.amount or 0 }}" required>
+      </div>
+      <div class="form-group">
+        <label>USD equivalent *</label>
+        <input type="number" step="0.01" name="amount_usd" value="{{ i.amount_usd or 0 }}" required>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Payment method</label>
+        <select name="payment_method">
+          {% for m in methods %}
+          <option {% if i.payment_method==m %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Receive into account</label>
+        <select name="account">
+          <option value="">— none —</option>
+          {% for key, label in accounts %}
+          <option value="{{ key }}" {% if i.account==key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select name="status">
+          {% for s in ['Received','Pending','Cleared'] %}
+          <option {% if i.status==s %}selected{% endif %}>{{ s }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Reference</label>
+        <input name="reference" value="{{ i.reference or '' }}">
+      </div>
+      <div class="form-group" style="flex:2;">
+        <label>Notes</label>
+        <input name="notes" value="{{ i.notes or '' }}">
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save changes</button>
+    <a href="{{ url_for('ops_incomes') }}" class="btn btn-outline">Cancel</a>
+  </form>
+</div>
+{% endblock %}

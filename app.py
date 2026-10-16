@@ -1079,6 +1079,48 @@ def adjust_wallet(account_key, delta, currency=None):
     return bal
 
 
+
+
+def wallet_effect_expense(row):
+    """Return (account, delta) that was applied for an expense row, or (None, 0)."""
+    if not row:
+        return None, 0.0
+    if (row.get("status") or "") != "Paid":
+        return None, 0.0
+    acc = (row.get("account") or "").strip()
+    if not acc:
+        return None, 0.0
+    try:
+        amt = float(row.get("amount") or 0)
+    except Exception:
+        amt = 0.0
+    return acc, -amt  # expense reduces balance
+
+
+def wallet_effect_income(row):
+    if not row:
+        return None, 0.0
+    if (row.get("status") or "") not in ("Received", "Cleared"):
+        return None, 0.0
+    acc = (row.get("account") or "").strip()
+    if not acc:
+        return None, 0.0
+    try:
+        amt = float(row.get("amount") or 0)
+    except Exception:
+        amt = 0.0
+    return acc, amt  # income increases balance
+
+
+def reapply_wallet(old_effect, new_effect, currency=None):
+    """Undo old (account, delta) and apply new (account, delta)."""
+    old_acc, old_delta = old_effect
+    new_acc, new_delta = new_effect
+    if old_acc and old_delta:
+        adjust_wallet(old_acc, -old_delta, currency)  # reverse
+    if new_acc and new_delta:
+        adjust_wallet(new_acc, new_delta, currency)
+
 def period_date_range(period, start=None, end=None):
     """Return (start_date, end_date, label) for report presets."""
     today = datetime.now().date()
@@ -1947,9 +1989,69 @@ def ops_expense_delete(expense_id):
     if not row:
         flash("Expense not found.", "danger")
         return redirect(url_for("ops_expenses"))
+    acc, delta = wallet_effect_expense(row)
+    if acc and delta:
+        adjust_wallet(acc, -delta, row.get("currency"))  # reverse
     ops.delete("expenses", "expense_id", expense_id)
     flash(f"Expense {expense_id} deleted.", "success")
     return redirect(url_for("ops_expenses"))
+
+
+@app.route("/ops/expenses/<expense_id>/edit", methods=["GET", "POST"])
+@login_required
+@manage_required
+def ops_expense_edit(expense_id):
+    row = ops.get_one("expenses", "expense_id", expense_id)
+    if not row:
+        flash("Expense not found.", "danger")
+        return redirect(url_for("ops_expenses"))
+    if request.method == "POST":
+        old_effect = wallet_effect_expense(row)
+        try:
+            amount = float(request.form.get("amount", 0) or 0)
+            amount_usd = float(request.form.get("amount_usd", 0) or 0)
+        except Exception:
+            amount, amount_usd = 0.0, 0.0
+        currency = (request.form.get("currency") or row.get("currency") or "GHS").strip().upper()
+        if currency == "USD" and amount_usd <= 0:
+            amount_usd = amount
+        account = (request.form.get("account") or "").strip()
+        status = request.form.get("status") or "Paid"
+        updated = {
+            "expense_date": request.form.get("expense_date") or row.get("expense_date"),
+            "category": request.form.get("category") or row.get("category"),
+            "subcategory": (request.form.get("subcategory") or "").strip(),
+            "description": (request.form.get("description") or "").strip(),
+            "payee": (request.form.get("payee") or "").strip(),
+            "worker_username": (request.form.get("worker_username") or "").strip(),
+            "amount": amount,
+            "currency": currency,
+            "amount_usd": amount_usd,
+            "payment_method": request.form.get("payment_method") or row.get("payment_method"),
+            "reference": (request.form.get("reference") or "").strip(),
+            "status": status,
+            "notes": (request.form.get("notes") or "").strip(),
+            "account": account,
+        }
+        ops.update("expenses", "expense_id", expense_id, updated)
+        new_row = dict(row)
+        new_row.update(updated)
+        reapply_wallet(old_effect, wallet_effect_expense(new_row), currency)
+        flash(f"Expense {expense_id} updated.", "success")
+        return redirect(url_for("ops_expenses"))
+    ra = load_receiving_accounts()
+    return render_template(
+        "ops_expense_edit.html",
+        e=row,
+        categories=ops.EXPENSE_CATEGORIES,
+        methods=ops.EXPENSE_METHODS,
+        currencies=["GHS", "USD", "EUR", "GBP", "CNY", "NGN"],
+        accounts=ACCOUNT_OPTIONS,
+        wallets=ra.get("wallets") or {},
+        users=list_users(),
+        company=COMPANY,
+        user=session,
+    )
 
 
 @app.route("/ops/expenses/<expense_id>/status", methods=["POST"])
@@ -1961,7 +2063,11 @@ def ops_expense_status(expense_id):
         flash("Expense not found.", "danger")
         return redirect(url_for("ops_expenses"))
     st = request.form.get("status") or row.get("status")
+    old_effect = wallet_effect_expense(row)
     ops.update("expenses", "expense_id", expense_id, {"status": st})
+    new_row = dict(row)
+    new_row["status"] = st
+    reapply_wallet(old_effect, wallet_effect_expense(new_row), row.get("currency"))
     flash(f"Expense {expense_id} marked {st}.", "success")
     return redirect(url_for("ops_expenses"))
 
@@ -2043,9 +2149,70 @@ def ops_income_delete(income_id):
     if not row:
         flash("Income not found.", "danger")
         return redirect(url_for("ops_incomes"))
+    acc, delta = wallet_effect_income(row)
+    if acc and delta:
+        adjust_wallet(acc, -delta, row.get("currency"))
     ops.delete("incomes", "income_id", income_id)
     flash(f"Income {income_id} deleted.", "success")
     return redirect(url_for("ops_incomes"))
+
+
+@app.route("/ops/incomes/<income_id>/edit", methods=["GET", "POST"])
+@login_required
+@manage_required
+def ops_income_edit(income_id):
+    row = ops.get_one("incomes", "income_id", income_id)
+    if not row:
+        flash("Income not found.", "danger")
+        return redirect(url_for("ops_incomes"))
+    if request.method == "POST":
+        old_effect = wallet_effect_income(row)
+        try:
+            amount = float(request.form.get("amount", 0) or 0)
+            amount_usd = float(request.form.get("amount_usd", 0) or 0)
+        except Exception:
+            amount, amount_usd = 0.0, 0.0
+        currency = (request.form.get("currency") or row.get("currency") or "GHS").strip().upper()
+        if currency == "USD" and amount_usd <= 0:
+            amount_usd = amount
+        account = (request.form.get("account") or "").strip()
+        status = request.form.get("status") or "Received"
+        updated = {
+            "income_date": request.form.get("income_date") or row.get("income_date"),
+            "category": request.form.get("category") or row.get("category"),
+            "subcategory": (request.form.get("subcategory") or "").strip(),
+            "description": (request.form.get("description") or "").strip(),
+            "client_name": (request.form.get("client_name") or "").strip(),
+            "order_id": (request.form.get("order_id") or "").strip(),
+            "amount": amount,
+            "currency": currency,
+            "amount_usd": amount_usd,
+            "payment_method": request.form.get("payment_method") or row.get("payment_method"),
+            "reference": (request.form.get("reference") or "").strip(),
+            "status": status,
+            "notes": (request.form.get("notes") or "").strip(),
+            "account": account,
+        }
+        ops.update("incomes", "income_id", income_id, updated)
+        new_row = dict(row)
+        new_row.update(updated)
+        reapply_wallet(old_effect, wallet_effect_income(new_row), currency)
+        flash(f"Income {income_id} updated.", "success")
+        return redirect(url_for("ops_incomes"))
+    ra = load_receiving_accounts()
+    orders = ops.order_list()[:100] if hasattr(ops, "order_list") else []
+    return render_template(
+        "ops_income_edit.html",
+        i=row,
+        categories=ops.INCOME_CATEGORIES,
+        methods=ops.INCOME_METHODS,
+        currencies=["GHS", "USD", "EUR", "GBP", "CNY", "NGN"],
+        accounts=ACCOUNT_OPTIONS,
+        wallets=ra.get("wallets") or {},
+        orders=orders,
+        company=COMPANY,
+        user=session,
+    )
 
 
 @app.route("/ops/incomes/<income_id>/status", methods=["POST"])
@@ -2057,7 +2224,11 @@ def ops_income_status(income_id):
         flash("Income not found.", "danger")
         return redirect(url_for("ops_incomes"))
     st = request.form.get("status") or row.get("status")
+    old_effect = wallet_effect_income(row)
     ops.update("incomes", "income_id", income_id, {"status": st})
+    new_row = dict(row)
+    new_row["status"] = st
+    reapply_wallet(old_effect, wallet_effect_income(new_row), row.get("currency"))
     flash(f"Income {income_id} marked {st}.", "success")
     return redirect(url_for("ops_incomes"))
 

@@ -186,6 +186,8 @@
           <td>{{ i.recorded_by or '—' }}</td>
           <td>
             {% if session.get('role') in ['admin','manager'] %}
+            <a class="btn btn-sm btn-outline" href="{{ url_for('ops_income_edit', income_id=i.income_id) }}">Edit</a>
+            
             <form method="post" action="{{ url_for('ops_income_delete', income_id=i.income_id) }}" onsubmit="return confirm('Delete {{ i.income_id }}?');">
               <button type="submit" class="btn btn-sm btn-outline" style="color:#c00;">Delete</button>
             </form>
