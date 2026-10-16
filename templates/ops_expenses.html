@@ -98,6 +98,16 @@
         </select>
       </div>
       <div class="form-group">
+        <label>Pay from account</label>
+        <select name="account">
+          <option value="">— none —</option>
+          {% for key, label in accounts %}
+          <option value="{{ key }}">{{ label }}{% if wallets.get(key) %} ({{ wallets[key].currency }} {{ '%.2f'|format(wallets[key].balance or 0) }}){% endif %}</option>
+          {% endfor %}
+        </select>
+        <small style="color:var(--muted);font-size:0.75rem;">If status is Paid, balance is reduced</small>
+      </div>
+      <div class="form-group">
         <label>Reference / receipt #</label>
         <input name="reference" placeholder="MoMo ID, bank ref…">
       </div>
@@ -149,7 +159,7 @@
       <thead>
         <tr>
           <th>ID</th><th>Date</th><th>Category</th><th>Description</th><th>Payee</th>
-          <th>Amount</th><th>USD</th><th>Method</th><th>Status</th><th>By</th><th></th>
+          <th>Amount</th><th>USD</th><th>Method</th><th>Account</th><th>Status</th><th>By</th><th></th>
         </tr>
       </thead>
       <tbody>
@@ -163,6 +173,7 @@
           <td>{{ e.currency }} {{ '%.2f'|format(e.amount or 0) }}</td>
           <td>${{ '%.2f'|format(e.amount_usd or 0) }}</td>
           <td>{{ e.payment_method }}</td>
+          <td>{{ e.account or "—" }}</td>
           <td>
             <form method="post" action="{{ url_for('ops_expense_status', expense_id=e.expense_id) }}" style="display:inline;">
               <select name="status" onchange="this.form.submit()" style="font-size:0.8rem;padding:0.2rem;">
@@ -182,7 +193,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="11" style="text-align:center;color:var(--muted);">No expenses for this month yet.</td></tr>
+        <tr><td colspan="12" style="text-align:center;color:var(--muted);">No expenses for this month yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

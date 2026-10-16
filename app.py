@@ -1010,6 +1010,11 @@ def load_receiving_accounts():
         "billing_email": COMPANY.get("email", ""),
         "internal_notes": "",
         "preferred_currency": "USD",
+        "wallets": {
+            "cash": {"label": "Cash on Hand", "balance": 0.0, "currency": "GHS"},
+            "momo": {"label": "Mobile Money", "balance": 0.0, "currency": "GHS"},
+            "bank": {"label": "Bank Account", "balance": 0.0, "currency": "GHS"},
+        },
     }
     if RECEIVING_ACCOUNTS_FILE.exists():
         try:
@@ -1020,12 +1025,77 @@ def load_receiving_accounts():
             pass
     if isinstance(defaults.get("bank_lines"), str):
         defaults["bank_lines"] = [ln.strip() for ln in defaults["bank_lines"].splitlines() if ln.strip()]
+    # Ensure wallet structure exists
+    wallets = defaults.get("wallets") or {}
+    for key, label, cur in (
+        ("cash", "Cash on Hand", "GHS"),
+        ("momo", "Mobile Money", "GHS"),
+        ("bank", "Bank Account", "GHS"),
+    ):
+        if key not in wallets or not isinstance(wallets.get(key), dict):
+            wallets[key] = {"label": label, "balance": 0.0, "currency": cur}
+        else:
+            wallets[key].setdefault("label", label)
+            wallets[key].setdefault("balance", 0.0)
+            wallets[key].setdefault("currency", cur)
+            try:
+                wallets[key]["balance"] = float(wallets[key]["balance"] or 0)
+            except Exception:
+                wallets[key]["balance"] = 0.0
+    defaults["wallets"] = wallets
     return defaults
 
 
 def save_receiving_accounts(data):
     with open(RECEIVING_ACCOUNTS_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+ACCOUNT_OPTIONS = [
+    ("cash", "Cash on Hand"),
+    ("momo", "Mobile Money"),
+    ("bank", "Bank Account"),
+]
+
+
+def adjust_wallet(account_key, delta, currency=None):
+    """Add delta (can be negative) to a wallet balance. Returns new balance or None."""
+    if not account_key or account_key not in ("cash", "momo", "bank"):
+        return None
+    data = load_receiving_accounts()
+    wallets = data.get("wallets") or {}
+    w = wallets.get(account_key) or {"label": account_key, "balance": 0.0, "currency": "GHS"}
+    try:
+        bal = float(w.get("balance") or 0)
+    except Exception:
+        bal = 0.0
+    bal = round(bal + float(delta or 0), 2)
+    w["balance"] = bal
+    if currency:
+        w["currency"] = currency
+    wallets[account_key] = w
+    data["wallets"] = wallets
+    save_receiving_accounts(data)
+    return bal
+
+
+def period_date_range(period, start=None, end=None):
+    """Return (start_date, end_date, label) for report presets."""
+    today = datetime.now().date()
+    if period == "custom" and start and end:
+        return start, end, f"{start} to {end}"
+    if period == "today":
+        d = today.isoformat()
+        return d, d, "Today"
+    if period == "week":
+        start_d = today - timedelta(days=today.weekday())  # Monday
+        return start_d.isoformat(), today.isoformat(), "This week"
+    if period == "year":
+        return f"{today.year}-01-01", today.isoformat(), f"Year {today.year}"
+    # default month
+    start_d = today.replace(day=1)
+    return start_d.isoformat(), today.isoformat(), today.strftime("%B %Y")
+
 
 
 @app.route("/admin/accounts", methods=["GET", "POST"])
@@ -1038,6 +1108,16 @@ def admin_treasury():
             for line in (request.form.get("bank_details") or "").splitlines()
             if line.strip()
         ]
+        existing = load_receiving_accounts()
+        wallets = existing.get("wallets") or {}
+        for key in ("cash", "momo", "bank"):
+            try:
+                bal = float(request.form.get(f"wallet_{key}_balance", wallets.get(key, {}).get("balance", 0)) or 0)
+            except Exception:
+                bal = float((wallets.get(key) or {}).get("balance") or 0)
+            cur = (request.form.get(f"wallet_{key}_currency") or (wallets.get(key) or {}).get("currency") or "GHS").strip().upper()
+            label = (wallets.get(key) or {}).get("label") or key
+            wallets[key] = {"label": label, "balance": bal, "currency": cur}
         data = {
             "momo_provider": request.form.get("momo_provider") or "TELECEL CASH",
             "momo": request.form.get("momo", "").strip(),
@@ -1046,6 +1126,7 @@ def admin_treasury():
             "billing_email": request.form.get("billing_email", "").strip(),
             "internal_notes": request.form.get("internal_notes", "").strip(),
             "preferred_currency": (request.form.get("preferred_currency") or "USD").strip().upper(),
+            "wallets": wallets,
         }
         save_receiving_accounts(data)
         # Keep invoice defaults in sync for new invoices
@@ -1799,6 +1880,8 @@ def ops_expenses():
             currency = (request.form.get("currency") or "GHS").strip().upper()
             if currency == "USD" and amount_usd <= 0:
                 amount_usd = amount
+            account = (request.form.get("account") or "").strip()
+            status = request.form.get("status") or "Paid"
             eid = ops.add_expense({
                 "expense_date": request.form.get("expense_date") or datetime.now().strftime("%Y-%m-%d"),
                 "category": request.form.get("category") or "Miscellaneous",
@@ -1811,11 +1894,16 @@ def ops_expenses():
                 "amount_usd": amount_usd,
                 "payment_method": request.form.get("payment_method") or "Cash",
                 "reference": (request.form.get("reference") or "").strip(),
-                "status": request.form.get("status") or "Paid",
+                "status": status,
                 "recorded_by": session.get("name") or session.get("username"),
                 "notes": (request.form.get("notes") or "").strip(),
+                "account": account,
             })
-            flash(f"Expense {eid} recorded.", "success")
+            if status == "Paid" and account:
+                adjust_wallet(account, -amount, currency)
+                flash(f"Expense {eid} recorded and deducted from {account}.", "success")
+            else:
+                flash(f"Expense {eid} recorded.", "success")
         except Exception as e:
             flash(f"Could not save expense: {e}", "danger")
         return redirect(url_for("ops_expenses"))
@@ -1833,6 +1921,7 @@ def ops_expenses():
         # optional: extend from ops if CURRENCIES exists
     except Exception:
         pass
+    ra = load_receiving_accounts()
     return render_template(
         "ops_expenses.html",
         expenses=expenses_view,
@@ -1843,6 +1932,8 @@ def ops_expenses():
         methods=ops.EXPENSE_METHODS,
         currencies=currencies,
         users=users,
+        accounts=ACCOUNT_OPTIONS,
+        wallets=ra.get("wallets") or {},
         company=COMPANY,
         user=session,
     )
@@ -1890,6 +1981,8 @@ def ops_incomes():
             currency = (request.form.get("currency") or "GHS").strip().upper()
             if currency == "USD" and amount_usd <= 0:
                 amount_usd = amount
+            account = (request.form.get("account") or "").strip()
+            status = request.form.get("status") or "Received"
             iid = ops.add_income({
                 "income_date": request.form.get("income_date") or datetime.now().strftime("%Y-%m-%d"),
                 "category": request.form.get("category") or "Other Operating Income",
@@ -1902,11 +1995,16 @@ def ops_incomes():
                 "amount_usd": amount_usd,
                 "payment_method": request.form.get("payment_method") or "Bank Transfer",
                 "reference": (request.form.get("reference") or "").strip(),
-                "status": request.form.get("status") or "Received",
+                "status": status,
                 "recorded_by": session.get("name") or session.get("username"),
                 "notes": (request.form.get("notes") or "").strip(),
+                "account": account,
             })
-            flash(f"Income {iid} recorded.", "success")
+            if status in ("Received", "Cleared") and account:
+                adjust_wallet(account, amount, currency)
+                flash(f"Income {iid} recorded and added to {account}.", "success")
+            else:
+                flash(f"Income {iid} recorded.", "success")
         except Exception as e:
             flash(f"Could not save income: {e}", "danger")
         return redirect(url_for("ops_incomes"))
@@ -1918,6 +2016,7 @@ def ops_incomes():
     pnl = ops.pnl_summary(month)
     orders = ops.order_list()[:100] if hasattr(ops, "order_list") else []
     currencies = ["GHS", "USD", "EUR", "GBP", "CNY", "NGN"]
+    ra = load_receiving_accounts()
     return render_template(
         "ops_incomes.html",
         incomes=incomes_view,
@@ -1929,6 +2028,8 @@ def ops_incomes():
         methods=ops.INCOME_METHODS,
         currencies=currencies,
         orders=orders,
+        accounts=ACCOUNT_OPTIONS,
+        wallets=ra.get("wallets") or {},
         company=COMPANY,
         user=session,
     )
@@ -1959,6 +2060,203 @@ def ops_income_status(income_id):
     ops.update("incomes", "income_id", income_id, {"status": st})
     flash(f"Income {income_id} marked {st}.", "success")
     return redirect(url_for("ops_incomes"))
+
+
+
+
+# ── Financial Report (period P&L + PDF) ───────────────────────
+@app.route("/reports/financial")
+@login_required
+@finance_required
+def financial_report():
+    period = request.args.get("period") or "month"
+    start = request.args.get("start") or ""
+    end = request.args.get("end") or ""
+    start_d, end_d, label = period_date_range(period, start or None, end or None)
+    summary = ops.financial_summary(start_d, end_d)
+    ra = load_receiving_accounts()
+    # Invoice slice for period
+    db = load_db()
+    invs = []
+    inv_total = inv_paid = inv_outstanding = 0.0
+    for no, inv in (db.get("invoices") or {}).items():
+        d = (inv.get("invoice_date") or inv.get("created_at") or "")[:10]
+        if d and start_d <= d <= end_d:
+            invs.append((no, inv))
+            inv_total += float(inv.get("total") or 0)
+            inv_paid += float(inv.get("paid") or 0)
+            inv_outstanding += max(0.0, float(inv.get("balance_due") or 0))
+    invs.sort(key=lambda x: x[1].get("invoice_date") or "", reverse=True)
+    return render_template(
+        "financial_report.html",
+        summary=summary,
+        period=period,
+        period_label=label,
+        start=start_d,
+        end=end_d,
+        wallets=ra.get("wallets") or {},
+        invoices=invs[:50],
+        inv_total=inv_total,
+        inv_paid=inv_paid,
+        inv_outstanding=inv_outstanding,
+        company=COMPANY,
+        user=session,
+    )
+
+
+@app.route("/reports/financial/pdf")
+@login_required
+@finance_required
+def financial_report_pdf():
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
+    from io import BytesIO
+
+    period = request.args.get("period") or "month"
+    start = request.args.get("start") or ""
+    end = request.args.get("end") or ""
+    start_d, end_d, label = period_date_range(period, start or None, end or None)
+    s = ops.financial_summary(start_d, end_d)
+    ra = load_receiving_accounts()
+    wallets = ra.get("wallets") or {}
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=16*mm, rightMargin=16*mm, topMargin=14*mm, bottomMargin=14*mm)
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle(name="H1", fontSize=16, textColor=colors.HexColor("#0A2540"), spaceAfter=6, fontName="Helvetica-Bold"))
+    styles.add(ParagraphStyle(name="H2", fontSize=11, textColor=colors.HexColor("#0077B6"), spaceBefore=10, spaceAfter=4, fontName="Helvetica-Bold"))
+    styles.add(ParagraphStyle(name="Body", fontSize=9, textColor=colors.HexColor("#1A1A2E"), leading=12))
+    styles.add(ParagraphStyle(name="Muted", fontSize=8, textColor=colors.HexColor("#5A6A7A")))
+    styles.add(ParagraphStyle(name="Right", fontSize=9, alignment=TA_RIGHT))
+
+    story = []
+    story.append(Paragraph("WaveTies Logistics — Financial Report", styles["H1"]))
+    story.append(Paragraph(f"Period: <b>{label}</b> &nbsp; ({start_d} → {end_d})", styles["Body"]))
+    story.append(Paragraph(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", styles["Muted"]))
+    story.append(Spacer(1, 8))
+
+    # Summary KPIs
+    story.append(Paragraph("Summary (USD equivalent)", styles["H2"]))
+    kpi = [
+        ["Income received", f"${s['income_received_usd']:,.2f}"],
+        ["Income pending", f"${s['income_pending_usd']:,.2f}"],
+        ["Expenses paid", f"${s['expense_paid_usd']:,.2f}"],
+        ["Expenses pending", f"${s['expense_pending_usd']:,.2f}"],
+        ["Net (received − paid)", f"${s['net_usd']:,.2f}"],
+    ]
+    t = Table(kpi, colWidths=[110*mm, 60*mm])
+    t.setStyle(TableStyle([
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica"),
+        ("FONTSIZE", (0, 0), (-1, -1), 9),
+        ("FONTNAME", (0, -1), (-1, -1), "Helvetica-Bold"),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#E8F4FC")),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("LINEBELOW", (0, 0), (-1, -2), 0.3, colors.HexColor("#CCDDEE")),
+    ]))
+    story.append(t)
+
+    # Account balances
+    story.append(Paragraph("Account balances", styles["H2"]))
+    wrows = [["Account", "Currency", "Balance"]]
+    for key in ("cash", "momo", "bank"):
+        w = wallets.get(key) or {}
+        wrows.append([w.get("label") or key, w.get("currency") or "GHS", f"{float(w.get('balance') or 0):,.2f}"])
+    wt = Table(wrows, colWidths=[80*mm, 40*mm, 50*mm])
+    wt.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0A2540")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("ALIGN", (2, 1), (2, -1), "RIGHT"),
+        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#CCDDEE")),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+    ]))
+    story.append(wt)
+
+    def cat_table(title, rows):
+        story.append(Paragraph(title, styles["H2"]))
+        data = [["Category", "Count", "USD Total"]]
+        if not rows:
+            data.append(["— none —", "0", "$0.00"])
+        else:
+            for r in rows:
+                data.append([r["category"], str(r["n"]), f"${r['total_usd']:,.2f}"])
+        tbl = Table(data, colWidths=[100*mm, 30*mm, 40*mm])
+        tbl.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0077B6")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
+            ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+            ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#CCDDEE")),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+        ]))
+        story.append(tbl)
+
+    cat_table("Income by category (received)", s["income_by_category"])
+    cat_table("Expenses by category (paid)", s["expense_by_category"])
+
+    # Line items (cap)
+    story.append(Paragraph("Income transactions", styles["H2"]))
+    idata = [["Date", "Category", "Description", "Account", "Amount", "USD"]]
+    for i in (s["incomes"] or [])[:40]:
+        idata.append([
+            i.get("income_date") or "",
+            (i.get("category") or "")[:22],
+            (i.get("description") or "")[:28],
+            i.get("account") or "—",
+            f"{i.get('currency','')} {float(i.get('amount') or 0):,.2f}",
+            f"${float(i.get('amount_usd') or 0):,.2f}",
+        ])
+    if len(idata) == 1:
+        idata.append(["—", "", "No income in period", "", "", ""])
+    it = Table(idata, colWidths=[22*mm, 35*mm, 45*mm, 20*mm, 28*mm, 22*mm])
+    it.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0A2540")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#DDD")),
+        ("ALIGN", (4, 1), (-1, -1), "RIGHT"),
+    ]))
+    story.append(it)
+
+    story.append(Paragraph("Expense transactions", styles["H2"]))
+    edata = [["Date", "Category", "Description", "Account", "Amount", "USD"]]
+    for e in (s["expenses"] or [])[:40]:
+        edata.append([
+            e.get("expense_date") or "",
+            (e.get("category") or "")[:22],
+            (e.get("description") or "")[:28],
+            e.get("account") or "—",
+            f"{e.get('currency','')} {float(e.get('amount') or 0):,.2f}",
+            f"${float(e.get('amount_usd') or 0):,.2f}",
+        ])
+    if len(edata) == 1:
+        edata.append(["—", "", "No expenses in period", "", "", ""])
+    et = Table(edata, colWidths=[22*mm, 35*mm, 45*mm, 20*mm, 28*mm, 22*mm])
+    et.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0A2540")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTSIZE", (0, 0), (-1, -1), 7),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#DDD")),
+        ("ALIGN", (4, 1), (-1, -1), "RIGHT"),
+    ]))
+    story.append(et)
+
+    story.append(Spacer(1, 12))
+    story.append(Paragraph("WaveTies Logistics And Supply Chain Solutions · Stronger Ties", styles["Muted"]))
+    doc.build(story)
+    buf.seek(0)
+    fname = f"WaveTies_Financial_{start_d}_to_{end_d}.pdf"
+    return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
 
 
 if __name__ == "__main__":

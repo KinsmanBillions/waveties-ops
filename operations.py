@@ -186,6 +186,16 @@ def init_ops_db():
             key TEXT PRIMARY KEY,
             value TEXT
         )""")
+
+        # Migrations: link to cash accounts
+        for tbl, col in (("expenses", "account"), ("incomes", "account")):
+            try:
+                cols = [r[1] for r in c.execute(f"PRAGMA table_info({tbl})").fetchall()]
+                if col not in cols:
+                    c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT")
+            except Exception:
+                pass
+
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('rmb_rate', '7.14')")
         c.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('rmb_rates_json', '{}')")
         # Migration: base currency for multi-currency RMB desk
@@ -420,7 +430,7 @@ def add_expense(data: dict):
     cols = [
         "expense_id", "expense_date", "category", "subcategory", "description",
         "payee", "worker_username", "amount", "currency", "amount_usd",
-        "payment_method", "reference", "status", "recorded_by", "notes",
+        "payment_method", "reference", "status", "recorded_by", "notes", "account",
     ]
     vals = [data.get(c) for c in cols]
     with get_conn() as conn:
@@ -516,7 +526,7 @@ def add_income(data: dict):
     cols = [
         "income_id", "income_date", "category", "subcategory", "description",
         "client_name", "order_id", "amount", "currency", "amount_usd",
-        "payment_method", "reference", "status", "recorded_by", "notes",
+        "payment_method", "reference", "status", "recorded_by", "notes", "account",
     ]
     vals = [data.get(c) for c in cols]
     with get_conn() as conn:
@@ -575,4 +585,62 @@ def pnl_summary(month=None):
         "income_pending_usd": inc.get("pending_usd") or 0,
         "expense_pending_usd": exp.get("pending_usd") or 0,
         "month": month,
+    }
+
+
+def list_expenses_between(start_date, end_date):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM expenses WHERE expense_date >= ? AND expense_date <= ? "
+            "ORDER BY expense_date DESC, created_at DESC",
+            (start_date, end_date),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_incomes_between(start_date, end_date):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM incomes WHERE income_date >= ? AND income_date <= ? "
+            "ORDER BY income_date DESC, created_at DESC",
+            (start_date, end_date),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def financial_summary(start_date, end_date):
+    """P&L style summary for a date range (inclusive)."""
+    expenses = list_expenses_between(start_date, end_date)
+    incomes = list_incomes_between(start_date, end_date)
+    exp_paid = sum(float(e.get("amount_usd") or 0) for e in expenses if e.get("status") == "Paid")
+    exp_pending = sum(float(e.get("amount_usd") or 0) for e in expenses if e.get("status") != "Paid")
+    inc_recv = sum(float(i.get("amount_usd") or 0) for i in incomes if i.get("status") in ("Received", "Cleared"))
+    inc_pending = sum(float(i.get("amount_usd") or 0) for i in incomes if i.get("status") not in ("Received", "Cleared"))
+
+    def by_cat(rows, status_ok):
+        bag = {}
+        for r in rows:
+            if not status_ok(r.get("status")):
+                continue
+            cat = r.get("category") or "Other"
+            bag.setdefault(cat, {"n": 0, "usd": 0.0})
+            bag[cat]["n"] += 1
+            bag[cat]["usd"] += float(r.get("amount_usd") or 0)
+        return sorted(
+            [{"category": k, "n": v["n"], "total_usd": v["usd"]} for k, v in bag.items()],
+            key=lambda x: -x["total_usd"],
+        )
+
+    return {
+        "start": start_date,
+        "end": end_date,
+        "expenses": expenses,
+        "incomes": incomes,
+        "expense_paid_usd": exp_paid,
+        "expense_pending_usd": exp_pending,
+        "income_received_usd": inc_recv,
+        "income_pending_usd": inc_pending,
+        "net_usd": inc_recv - exp_paid,
+        "income_by_category": by_cat(incomes, lambda s: s in ("Received", "Cleared")),
+        "expense_by_category": by_cat(expenses, lambda s: s == "Paid"),
     }

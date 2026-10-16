@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+{% block title %}Financial Report – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.75rem;">
+  <div>
+    <h1 style="margin:0;">Financial Report</h1>
+    <p style="color:var(--muted);margin:0.25rem 0 0;font-size:0.9rem;">{{ period_label }} · {{ start }} → {{ end }}</p>
+  </div>
+  <a class="btn btn-primary" href="{{ url_for('financial_report_pdf', period=period, start=start, end=end) }}">Download PDF</a>
+</div>
+
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-title">Period</div>
+  <form method="get" style="display:flex;flex-wrap:wrap;gap:0.6rem;align-items:end;">
+    <div class="form-group" style="margin:0;">
+      <label>Preset</label>
+      <select name="period" onchange="this.form.submit()">
+        <option value="today" {% if period=='today' %}selected{% endif %}>Today</option>
+        <option value="week" {% if period=='week' %}selected{% endif %}>This week</option>
+        <option value="month" {% if period=='month' %}selected{% endif %}>This month</option>
+        <option value="year" {% if period=='year' %}selected{% endif %}>This year</option>
+        <option value="custom" {% if period=='custom' %}selected{% endif %}>Custom range</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin:0;">
+      <label>From</label>
+      <input type="date" name="start" value="{{ start }}">
+    </div>
+    <div class="form-group" style="margin:0;">
+      <label>To</label>
+      <input type="date" name="end" value="{{ end }}">
+    </div>
+    <button type="submit" class="btn btn-outline">Apply</button>
+  </form>
+</div>
+
+<div class="kpi-grid" style="margin-bottom:1.25rem;">
+  <div class="kpi-card">
+    <div class="kpi-label">Income received (USD)</div>
+    <div class="kpi-value" style="color:#0a7;">${{ '%.2f'|format(summary.income_received_usd) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Expenses paid (USD)</div>
+    <div class="kpi-value">${{ '%.2f'|format(summary.expense_paid_usd) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Net (USD)</div>
+    <div class="kpi-value" style="color:{% if summary.net_usd >= 0 %}#0a7{% else %}#c00{% endif %};">
+      ${{ '%.2f'|format(summary.net_usd) }}
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="kpi-label">Invoices outstanding (period)</div>
+    <div class="kpi-value">{{ '%.2f'|format(inv_outstanding) }}</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-title">Account balances (current)</div>
+  <div class="kpi-grid">
+    {% for key in ['cash','momo','bank'] %}
+    {% set w = wallets.get(key, {}) %}
+    <div class="kpi-card">
+      <div class="kpi-label">{{ w.label or key }}</div>
+      <div class="kpi-value" style="font-size:1.2rem;">{{ w.currency or 'GHS' }} {{ '%.2f'|format(w.balance or 0) }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;" class="fin-two-col">
+  <div class="card">
+    <div class="card-title">Income by category</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Category</th><th>#</th><th>USD</th></tr></thead>
+        <tbody>
+        {% for row in summary.income_by_category %}
+          <tr><td>{{ row.category }}</td><td>{{ row.n }}</td><td>${{ '%.2f'|format(row.total_usd) }}</td></tr>
+        {% else %}
+          <tr><td colspan="3" style="color:var(--muted);">No received income in period</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Expenses by category</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Category</th><th>#</th><th>USD</th></tr></thead>
+        <tbody>
+        {% for row in summary.expense_by_category %}
+          <tr><td>{{ row.category }}</td><td>{{ row.n }}</td><td>${{ '%.2f'|format(row.total_usd) }}</td></tr>
+        {% else %}
+          <tr><td colspan="3" style="color:var(--muted);">No paid expenses in period</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Income transactions ({{ summary.incomes|length }})</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Client</th><th>Account</th><th>Amount</th><th>USD</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for i in summary.incomes %}
+        <tr>
+          <td>{{ i.income_date }}</td>
+          <td>{{ i.category }}</td>
+          <td>{{ i.description }}</td>
+          <td>{{ i.client_name or '—' }}</td>
+          <td>{{ i.account or '—' }}</td>
+          <td>{{ i.currency }} {{ '%.2f'|format(i.amount or 0) }}</td>
+          <td>${{ '%.2f'|format(i.amount_usd or 0) }}</td>
+          <td>{{ i.status }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" style="color:var(--muted);text-align:center;">None</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Expense transactions ({{ summary.expenses|length }})</div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Date</th><th>Category</th><th>Description</th><th>Payee</th><th>Account</th><th>Amount</th><th>USD</th><th>Status</th></tr></thead>
+      <tbody>
+      {% for e in summary.expenses %}
+        <tr>
+          <td>{{ e.expense_date }}</td>
+          <td>{{ e.category }}</td>
+          <td>{{ e.description }}</td>
+          <td>{{ e.payee or '—' }}</td>
+          <td>{{ e.account or '—' }}</td>
+          <td>{{ e.currency }} {{ '%.2f'|format(e.amount or 0) }}</td>
+          <td>${{ '%.2f'|format(e.amount_usd or 0) }}</td>
+          <td>{{ e.status }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" style="color:var(--muted);text-align:center;">None</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">Invoices in period</div>
+  <p style="color:var(--muted);font-size:0.9rem;">
+    Invoiced: <b>{{ '%.2f'|format(inv_total) }}</b> ·
+    Collected: <b>{{ '%.2f'|format(inv_paid) }}</b> ·
+    Outstanding: <b>{{ '%.2f'|format(inv_outstanding) }}</b>
+  </p>
+</div>
+
+<style>
+@media (max-width: 800px) {
+  .fin-two-col { grid-template-columns: 1fr !important; }
+}
+</style>
+{% endblock %}
