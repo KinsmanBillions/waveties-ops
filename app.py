@@ -949,7 +949,7 @@ def mark_paid(invoice_no):
             inv["paid"] = round(inv.get("paid", 0) + amount, 2)
             inv["balance_due"] = round(max(0, inv.get("total", 0) - inv["paid"]), 2)
             inv.setdefault("payments", [])
-            inv["payments"].append({
+            payment_entry = {
                 "amount": amount,
                 "note": note,
                 "account": account,
@@ -957,12 +957,45 @@ def mark_paid(invoice_no):
                 "currency": inv.get("currency") or "GHS",
                 "by": session.get("username"),
                 "at": datetime.now().isoformat(timespec="seconds"),
-            })
+            }
+            inv["payments"].append(payment_entry)
             db["invoices"][invoice_no] = inv
             save_db(db)
 
             # Credit selected wallet (Cash / MoMo / Bank)
             adjust_wallet(account, amount, inv.get("currency"))
+
+            # Also record under Income so Financial Report / net includes this payment
+            try:
+                currency = (inv.get("currency") or "GHS").upper()
+                amount_usd = amount if currency == "USD" else amount  # store same; user can adjust later
+                # Prefer USD equivalent if invoice currency is USD; otherwise keep amount as amount_usd
+                # for reporting consistency (same pattern as manual income entry)
+                iid = ops.add_income({
+                    "income_date": datetime.now().strftime("%Y-%m-%d"),
+                    "category": "Invoice Payment",
+                    "subcategory": invoice_no,
+                    "description": (note or f"Payment on invoice {invoice_no}").strip(),
+                    "client_name": inv.get("customer_name") or "",
+                    "order_id": "",
+                    "amount": amount,
+                    "currency": currency,
+                    "amount_usd": amount_usd,
+                    "payment_method": method or "Other",
+                    "reference": invoice_no,
+                    "status": "Received",
+                    "recorded_by": session.get("name") or session.get("username"),
+                    "notes": f"Auto from invoice payment · account={account}",
+                    "account": account,
+                })
+                payment_entry["income_id"] = iid
+                # persist income_id on payment line
+                inv["payments"][-1] = payment_entry
+                db["invoices"][invoice_no] = inv
+                save_db(db)
+            except Exception as inc_err:
+                # Payment already saved; income is secondary
+                flash(f"Payment saved, but income entry failed: {inc_err}", "warning")
 
             # Regenerate PDF with updated paid/balance
             safe_name = invoice_no.replace("/", "-")

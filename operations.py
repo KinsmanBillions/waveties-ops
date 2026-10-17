@@ -479,6 +479,7 @@ def expense_summary(month=None):
 
 # ── Income ───────────────────────────────────────────────────
 INCOME_CATEGORIES = [
+    "Invoice Payment",
     "Freight & Shipping Fees",
     "Sourcing / Buy-for-Me Commission",
     "RMB / FX Margin",
