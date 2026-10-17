@@ -903,6 +903,53 @@ def delete_invoice(invoice_no):
         flash("Invoice not found.", "danger")
         return redirect(url_for("invoice_list"))
     save_db(db)
+
+    # Reverse wallet credits from recorded payments + remove linked income rows
+    reversed_wallets = 0
+    removed_incomes = 0
+    try:
+        for pay in (inv.get("payments") or []):
+            acc = (pay.get("account") or "").strip()
+            try:
+                amt = float(pay.get("amount") or 0)
+            except Exception:
+                amt = 0.0
+            if acc and amt:
+                # Payment had credited the wallet — reverse it
+                adjust_wallet(acc, -amt, pay.get("currency") or inv.get("currency"))
+                reversed_wallets += 1
+            # Delete linked income if we stored income_id
+            iid = (pay.get("income_id") or "").strip()
+            if iid:
+                try:
+                    ops.delete("incomes", "income_id", iid)
+                    removed_incomes += 1
+                except Exception:
+                    pass
+        # Also remove any income rows tied to this invoice (reference / subcategory)
+        try:
+            for inc in ops.list_incomes(limit=2000):
+                if (inc.get("reference") or "") == invoice_no or (inc.get("subcategory") or "") == invoice_no:
+                    iid = inc.get("income_id")
+                    if not iid:
+                        continue
+                    # Avoid double-delete; still safe if already gone
+                    try:
+                        # If payment loop did not reverse (no account on income-only row), reverse income wallet effect
+                        already = any((p.get("income_id") or "") == iid for p in (inv.get("payments") or []))
+                        if not already:
+                            a, d = wallet_effect_income(inc)
+                            if a and d:
+                                adjust_wallet(a, -d, inc.get("currency"))
+                        ops.delete("incomes", "income_id", iid)
+                        removed_incomes += 1
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    except Exception:
+        pass
+
     # Remove PDF if present
     safe_name = invoice_no.replace("/", "-")
     pdf_path = OUTPUT_DIR / f"Invoice_{safe_name}.pdf"
@@ -918,7 +965,16 @@ def delete_invoice(invoice_no):
                 ops.update("orders", "order_id", o["order_id"], {"invoice_no": ""})
     except Exception:
         pass
-    flash(f"Invoice {invoice_no} deleted.", "success")
+
+    extra = []
+    if reversed_wallets:
+        extra.append(f"{reversed_wallets} account credit(s) reversed")
+    if removed_incomes:
+        extra.append(f"{removed_incomes} income record(s) removed")
+    msg = f"Invoice {invoice_no} deleted."
+    if extra:
+        msg += " " + "; ".join(extra) + "."
+    flash(msg, "success")
     return redirect(url_for("invoice_list"))
 
 
