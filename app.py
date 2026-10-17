@@ -904,9 +904,11 @@ def delete_invoice(invoice_no):
         return redirect(url_for("invoice_list"))
     save_db(db)
 
-    # Reverse wallet credits from recorded payments + remove linked income rows
+    # Undo payment effects ONCE: reverse wallet credits, remove linked income rows.
+    # Do not reverse wallet again when deleting income (would double-subtract).
     reversed_wallets = 0
     removed_incomes = 0
+    linked_income_ids = set()
     try:
         for pay in (inv.get("payments") or []):
             acc = (pay.get("account") or "").strip()
@@ -915,36 +917,36 @@ def delete_invoice(invoice_no):
             except Exception:
                 amt = 0.0
             if acc and amt:
-                # Payment had credited the wallet — reverse it
                 adjust_wallet(acc, -amt, pay.get("currency") or inv.get("currency"))
                 reversed_wallets += 1
-            # Delete linked income if we stored income_id
             iid = (pay.get("income_id") or "").strip()
             if iid:
+                linked_income_ids.add(iid)
+
+        # Remove income rows for this invoice (by id or reference) — wallet already fixed above
+        try:
+            for inc in ops.list_incomes(limit=2000):
+                iid = (inc.get("income_id") or "").strip()
+                if not iid:
+                    continue
+                tied = (
+                    iid in linked_income_ids
+                    or (inc.get("reference") or "") == invoice_no
+                    or (inc.get("subcategory") or "") == invoice_no
+                )
+                if not tied:
+                    continue
+                # If this income was NOT from a payment we already reversed, undo its wallet effect once
+                if iid not in linked_income_ids:
+                    a, d = wallet_effect_income(inc)
+                    if a and d:
+                        adjust_wallet(a, -d, inc.get("currency"))
+                        reversed_wallets += 1
                 try:
                     ops.delete("incomes", "income_id", iid)
                     removed_incomes += 1
                 except Exception:
                     pass
-        # Also remove any income rows tied to this invoice (reference / subcategory)
-        try:
-            for inc in ops.list_incomes(limit=2000):
-                if (inc.get("reference") or "") == invoice_no or (inc.get("subcategory") or "") == invoice_no:
-                    iid = inc.get("income_id")
-                    if not iid:
-                        continue
-                    # Avoid double-delete; still safe if already gone
-                    try:
-                        # If payment loop did not reverse (no account on income-only row), reverse income wallet effect
-                        already = any((p.get("income_id") or "") == iid for p in (inv.get("payments") or []))
-                        if not already:
-                            a, d = wallet_effect_income(inc)
-                            if a and d:
-                                adjust_wallet(a, -d, inc.get("currency"))
-                        ops.delete("incomes", "income_id", iid)
-                        removed_incomes += 1
-                    except Exception:
-                        pass
         except Exception:
             pass
     except Exception:
@@ -968,7 +970,7 @@ def delete_invoice(invoice_no):
 
     extra = []
     if reversed_wallets:
-        extra.append(f"{reversed_wallets} account credit(s) reversed")
+        extra.append(f"{reversed_wallets} account adjustment(s)")
     if removed_incomes:
         extra.append(f"{removed_incomes} income record(s) removed")
     msg = f"Invoice {invoice_no} deleted."
