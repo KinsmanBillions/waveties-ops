@@ -845,7 +845,7 @@ def edit_invoice(invoice_no):
     inv_view = dict(inv)
     inv_view["items"] = norm_items
 
-    currency_list = list(globals().get("CURRENCIES") or ["USD", "GHS", "EUR", "GBP", "CNY"])
+    currency_list = list(CURRENCIES) if CURRENCIES else ["USD", "GHS", "EUR", "GBP", "CNY"]
     try:
         return render_template(
             "edit_invoice.html",

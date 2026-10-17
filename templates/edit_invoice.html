@@ -77,7 +77,7 @@
           </tr>
         </thead>
         <tbody id="itemsBody">
-          {% for it in inv.items or [] %}
+          {% for it in inv.get('items', []) %}
           <tr>
             <td><input type="text" name="tracking[]" required value="{{ it.tracking or '' }}"></td>
             <td><input type="text" name="item_name[]" value="{{ it.item_name or '' }}"></td>
