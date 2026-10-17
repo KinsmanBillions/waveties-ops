@@ -7,7 +7,7 @@
   <a href="{{ url_for('view_invoice', invoice_no=invoice_no) }}" class="btn btn-outline">← Back</a>
 </div>
 
-<div class="card" style="max-width:480px;">
+<div class="card" style="max-width:520px;">
   <p><b>Invoice:</b> {{ invoice_no }}</p>
   <p><b>Customer:</b> {{ inv.customer_name }}</p>
   <p><b>Total:</b> {{ inv.currency or 'GHS' }} {{ "%.2f"|format(inv.total or 0) }}</p>
@@ -22,8 +22,34 @@
       <input type="number" name="amount" step="0.01" min="0.01" max="{{ balance }}" value="{{ balance }}" required>
     </div>
     <div class="form-group">
-      <label>Note (optional)</label>
-      <input type="text" name="note" placeholder="e.g. MOMO ref, bank transfer">
+      <label>Receive into account *</label>
+      <select name="account" required>
+        <option value="">— select account —</option>
+        {% for key, label in accounts %}
+        <option value="{{ key }}">
+          {{ label }}{% if wallets.get(key) %} — {{ wallets[key].currency }} {{ '%.2f'|format(wallets[key].balance or 0) }}{% endif %}
+        </option>
+        {% endfor %}
+      </select>
+      <small style="color:var(--muted);font-size:0.8rem;">This updates Cash / MoMo / Bank balance on Accounts</small>
+    </div>
+    <div class="form-group">
+      <label>Payment method</label>
+      <select name="method">
+        <option value="">— optional —</option>
+        <option>MTN MoMo</option>
+        <option>Telecel Cash</option>
+        <option>AT Money</option>
+        <option>Bank Transfer</option>
+        <option>Cash</option>
+        <option>Cheque</option>
+        <option>Card</option>
+        <option>Other</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Note / reference (optional)</label>
+      <input type="text" name="note" placeholder="e.g. MoMo ID, bank reference">
     </div>
     <button type="submit" class="btn btn-primary">Record Payment</button>
   </form>

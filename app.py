@@ -937,8 +937,13 @@ def mark_paid(invoice_no):
         try:
             amount = float(request.form.get("amount", 0) or 0)
             note = request.form.get("note", "").strip()
+            account = (request.form.get("account") or "").strip()
+            method = (request.form.get("method") or "").strip()
             if amount <= 0:
                 flash("Payment amount must be greater than zero.", "danger")
+                return redirect(url_for("mark_paid", invoice_no=invoice_no))
+            if not account:
+                flash("Select where the payment was received (Cash, MoMo, or Bank).", "danger")
                 return redirect(url_for("mark_paid", invoice_no=invoice_no))
 
             inv["paid"] = round(inv.get("paid", 0) + amount, 2)
@@ -947,30 +952,44 @@ def mark_paid(invoice_no):
             inv["payments"].append({
                 "amount": amount,
                 "note": note,
+                "account": account,
+                "method": method,
+                "currency": inv.get("currency") or "GHS",
                 "by": session.get("username"),
                 "at": datetime.now().isoformat(timespec="seconds"),
             })
             db["invoices"][invoice_no] = inv
             save_db(db)
 
+            # Credit selected wallet (Cash / MoMo / Bank)
+            adjust_wallet(account, amount, inv.get("currency"))
+
             # Regenerate PDF with updated paid/balance
             safe_name = invoice_no.replace("/", "-")
             generate_invoice(inv, str(OUTPUT_DIR / f"Invoice_{safe_name}.pdf"))
 
+            acc_label = dict(ACCOUNT_OPTIONS).get(account, account)
             if inv["balance_due"] <= 0:
-                flash(f"Invoice {invoice_no} marked as fully paid!", "success")
+                flash(f"Invoice {invoice_no} fully paid. Credited to {acc_label}.", "success")
             else:
-                flash(f"Payment of {inv.get('currency','GHS')} {amount:.2f} recorded. Balance due: {inv['balance_due']:.2f}", "success")
+                flash(
+                    f"Payment of {inv.get('currency','GHS')} {amount:.2f} recorded to {acc_label}. "
+                    f"Balance due: {inv['balance_due']:.2f}",
+                    "success",
+                )
             return redirect(url_for("view_invoice", invoice_no=invoice_no))
         except Exception as e:
             flash(f"Error recording payment: {e}", "danger")
 
     balance = inv.get("balance_due", inv.get("total", 0))
+    ra = load_receiving_accounts()
     return render_template(
         "mark_paid.html",
         inv=inv,
         invoice_no=invoice_no,
         balance=balance,
+        accounts=ACCOUNT_OPTIONS,
+        wallets=ra.get("wallets") or {},
         company=COMPANY,
         user=session,
     )
