@@ -819,18 +819,47 @@ def edit_invoice(invoice_no):
             flash(f"Could not update invoice: {e}", "danger")
             return redirect(url_for("edit_invoice", invoice_no=invoice_no))
 
-    ra = load_receiving_accounts()
-    bank_text = "\n".join(inv.get("bank_lines") or [])
-    return render_template(
-        "edit_invoice.html",
-        inv=inv,
-        invoice_no=invoice_no,
-        bank_text=bank_text,
-        company=COMPANY,
-        user=session,
-        currencies=CURRENCIES,
-        providers=["TELECEL CASH", "MTN MOMO", "AT MONEY", "OTHER"],
-    )
+    # Normalize so older invoices cannot crash the edit form
+    bank_lines = inv.get("bank_lines") or []
+    if isinstance(bank_lines, str):
+        bank_lines = [ln.strip() for ln in bank_lines.splitlines() if ln.strip()]
+    elif not isinstance(bank_lines, (list, tuple)):
+        bank_lines = []
+    bank_text = "\n".join(str(x) for x in bank_lines)
+
+    raw_items = inv.get("items") or []
+    norm_items = []
+    for it in raw_items:
+        if not isinstance(it, dict):
+            continue
+        norm_items.append({
+            "tracking": it.get("tracking") or it.get("tracking_no") or it.get("tracking_number") or "",
+            "item_name": it.get("item_name") or it.get("description") or it.get("name") or "Goods",
+            "transport": it.get("transport") or "SEA_FREIGHT",
+            "boxes": it.get("boxes") or 1,
+            "weight_kg": it.get("weight_kg") or it.get("weight") or 0,
+            "vol_cbm": it.get("vol_cbm") or it.get("volume") or 0,
+            "order_number": it.get("order_number") or it.get("order_no") or it.get("order_id") or "",
+            "amount": it.get("amount") or 0,
+        })
+    inv_view = dict(inv)
+    inv_view["items"] = norm_items
+
+    currency_list = list(globals().get("CURRENCIES") or ["USD", "GHS", "EUR", "GBP", "CNY"])
+    try:
+        return render_template(
+            "edit_invoice.html",
+            inv=inv_view,
+            invoice_no=invoice_no,
+            bank_text=bank_text,
+            company=COMPANY,
+            user=session,
+            currencies=currency_list,
+            providers=["TELECEL CASH", "MTN MOMO", "AT MONEY", "OTHER"],
+        )
+    except Exception as e:
+        flash(f"Could not open edit form: {e}", "danger")
+        return redirect(url_for("view_invoice", invoice_no=invoice_no))
 
 
 @app.route("/invoices/<path:invoice_no>/pdf")
