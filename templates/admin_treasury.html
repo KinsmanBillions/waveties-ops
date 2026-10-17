@@ -54,15 +54,15 @@
 
 <div class="card">
   
-<div class="card">
-  <div class="card-title">Cash account balances</div>
-  <p style="color:var(--muted);font-size:0.85rem;margin-top:0;">
-    These balances update when Income (Received) or Expenses (Paid) are linked to an account.
-    You can also set opening balances here.
+<form method="post" action="{{ url_for('admin_treasury') }}">
+
+  <div class="card-title" style="margin-top:0.5rem;">Cash account balances</div>
+  <p style="color:var(--muted);font-size:0.85rem;">
+    Set balances here after corrections. Income/expense/invoice payments also update these automatically.
   </p>
   <div class="form-row">
     {% for key, label in [('cash','Cash on Hand'),('momo','Mobile Money'),('bank','Bank Account')] %}
-    {% set w = accounts.wallets.get(key, {}) if accounts.wallets else {} %}
+    {% set w = accounts.wallets.get(key, {}) if accounts.wallets is defined and accounts.wallets else {} %}
     <div class="form-group">
       <label>{{ label }} balance</label>
       <input type="number" step="0.01" name="wallet_{{ key }}_balance" value="{{ '%.2f'|format(w.balance or 0) }}">
@@ -73,10 +73,8 @@
     </div>
     {% endfor %}
   </div>
-</div>
 
-<div class="card-title">Account Details</div>
-  <form method="post" action="{{ url_for('admin_treasury') }}">
+    <div class="card-title">Receiving details (on invoices)</div>
     <div class="form-row">
       <div class="form-group">
         <label>Default Mobile Money Provider</label>
