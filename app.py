@@ -1519,71 +1519,87 @@ def reapply_wallet(old_effect, new_effect, currency=None):
 
 
 def rebuild_wallet_balances():
-    """Recalculate Cash/MoMo/Bank from incomes, expenses, and invoice payments.
-    Expenses without an account are ignored (cannot know which wallet).
-    Starting balances are reset to 0 then all linked movements applied.
-    """
+    """Recalculate Cash/MoMo/Bank from all linked expenses, incomes, invoice payments."""
     data = load_receiving_accounts()
     wallets = data.get("wallets") or {}
+    labels = {"cash": "Cash on Hand", "momo": "Mobile Money", "bank": "Bank Account"}
     for key in ("cash", "momo", "bank"):
-        w = wallets.get(key) or {}
+        w = wallets.get(key) if isinstance(wallets.get(key), dict) else {}
         wallets[key] = {
-            "label": w.get("label") or {"cash": "Cash on Hand", "momo": "Mobile Money", "bank": "Bank Account"}.get(key, key),
+            "label": w.get("label") or labels[key],
             "balance": 0.0,
-            "currency": w.get("currency") or "GHS",
+            "currency": (w.get("currency") or "GHS"),
         }
 
-    # Expenses (Paid) → subtract
+    n_exp = n_inc = n_pay = 0
+
+    # Expenses Paid with account
     try:
-        for e in ops.get_all("expenses", order_by="expense_date DESC") or []:
+        expenses = []
+        if hasattr(ops, "list_expenses"):
+            expenses = ops.list_expenses(limit=5000)
+        else:
+            expenses = ops.get_all("expenses") or []
+        for e in expenses:
             if (e.get("status") or "") != "Paid":
                 continue
-            acc = (e.get("account") or "").strip()
+            acc = (e.get("account") or "").strip().lower()
             if acc not in wallets:
                 continue
             try:
                 amt = float(e.get("amount") or 0)
             except Exception:
                 amt = 0.0
-            wallets[acc]["balance"] = round(wallets[acc]["balance"] - amt, 2)
-    except Exception:
-        pass
+            wallets[acc]["balance"] = round(float(wallets[acc]["balance"]) - amt, 2)
+            n_exp += 1
+    except Exception as ex:
+        print(f"[WaveTies] rebuild expenses: {ex}", flush=True)
 
-    # Incomes (Received/Cleared) → add
+    # Incomes Received/Cleared
     try:
-        for i in ops.get_all("incomes", order_by="income_date DESC") or []:
+        incomes = []
+        if hasattr(ops, "list_incomes"):
+            incomes = ops.list_incomes(limit=5000)
+        else:
+            incomes = ops.get_all("incomes") or []
+        for i in incomes:
             if (i.get("status") or "") not in ("Received", "Cleared"):
                 continue
-            acc = (i.get("account") or "").strip()
+            acc = (i.get("account") or "").strip().lower()
             if acc not in wallets:
                 continue
             try:
                 amt = float(i.get("amount") or 0)
             except Exception:
                 amt = 0.0
-            wallets[acc]["balance"] = round(wallets[acc]["balance"] + amt, 2)
-    except Exception:
-        pass
+            wallets[acc]["balance"] = round(float(wallets[acc]["balance"]) + amt, 2)
+            n_inc += 1
+    except Exception as ex:
+        print(f"[WaveTies] rebuild incomes: {ex}", flush=True)
 
-    # Invoice payments → add
+    # Invoice payments
     try:
         db = load_db()
         for inv in (db.get("invoices") or {}).values():
             for pay in inv.get("payments") or []:
-                acc = (pay.get("account") or "").strip()
+                acc = (pay.get("account") or "").strip().lower()
                 if acc not in wallets:
                     continue
                 try:
                     amt = float(pay.get("amount") or 0)
                 except Exception:
                     amt = 0.0
-                wallets[acc]["balance"] = round(wallets[acc]["balance"] + amt, 2)
-    except Exception:
-        pass
+                wallets[acc]["balance"] = round(float(wallets[acc]["balance"]) + amt, 2)
+                n_pay += 1
+    except Exception as ex:
+        print(f"[WaveTies] rebuild invoice pays: {ex}", flush=True)
 
     data["wallets"] = wallets
     save_receiving_accounts(data)
-    return wallets
+    print(f"[WaveTies] Wallets rebuilt: {n_exp} expenses, {n_inc} incomes, {n_pay} invoice payments", flush=True)
+    return wallets, n_exp, n_inc, n_pay
+
+
 
 def period_date_range(period, start=None, end=None):
     """Return (start_date, end_date, label) for report presets."""
@@ -1610,9 +1626,13 @@ def period_date_range(period, start=None, end=None):
 @login_required
 @admin_required
 def admin_rebuild_wallets():
-    wallets = rebuild_wallet_balances()
-    parts = [f"{k}: {w.get('currency','')} {w.get('balance',0):.2f}" for k, w in wallets.items()]
-    flash("Balances rebuilt from linked transactions — " + "; ".join(parts), "success")
+    wallets, n_exp, n_inc, n_pay = rebuild_wallet_balances()
+    parts = [f"{k}: {w.get('currency','')} {float(w.get('balance') or 0):.2f}" for k, w in wallets.items()]
+    flash(
+        f"Balances rebuilt from {n_exp} expense(s), {n_inc} income(s), {n_pay} invoice payment(s). "
+        + " · ".join(parts),
+        "success",
+    )
     return redirect(url_for("admin_treasury"))
 
 @app.route("/admin/accounts", methods=["GET", "POST"])
@@ -1658,6 +1678,32 @@ def admin_treasury():
 
     accounts = load_receiving_accounts()
     accounts["bank_text"] = "\n".join(accounts.get("bank_lines") or [])
+    # Auto-heal zero wallets when linked expenses exist
+    try:
+        ws = accounts.get("wallets") or {}
+        all_zero = all(abs(float((ws.get(k) or {}).get("balance") or 0)) < 0.001 for k in ("cash", "momo", "bank"))
+        if all_zero:
+            has_linked = False
+            try:
+                for e in ops.list_expenses(limit=100):
+                    if e.get("status") == "Paid" and (e.get("account") or "").strip():
+                        has_linked = True
+                        break
+            except Exception:
+                pass
+            if has_linked:
+                wallets, n_exp, n_inc, n_pay = rebuild_wallet_balances()
+                accounts = load_receiving_accounts()
+                accounts["bank_text"] = "\n".join(accounts.get("bank_lines") or [])
+                if n_exp or n_inc or n_pay:
+                    flash(
+                        f"Account balances recalculated from {n_exp} expense(s), "
+                        f"{n_inc} income(s), {n_pay} payment(s).",
+                        "success",
+                    )
+    except Exception as _heal:
+        print(f"[WaveTies] wallet auto-heal: {_heal}", flush=True)
+
 
     db = load_db()
     invoices = db.get("invoices", {})
@@ -2470,8 +2516,12 @@ def ops_expenses():
                 "account": account,
             })
             if status == "Paid" and account:
-                adjust_wallet(account, -amount, currency)
-                flash(f"Expense {eid} recorded and deducted from {account}.", "success")
+                new_bal = adjust_wallet(account, -amount, currency)
+                flash(
+                    f"Expense {eid} recorded. {account} balance now "
+                    f"{currency} {new_bal if new_bal is not None else '?'}.",
+                    "success",
+                )
             else:
                 flash(f"Expense {eid} recorded.", "success")
         except Exception as e:
