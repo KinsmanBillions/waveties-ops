@@ -39,10 +39,10 @@
         Admin always has full access. For other roles, only checked items are allowed.
       </p>
       <div class="perm-grid" id="permGrid">
-        {% for key, label in all_permissions %}
+        {% for key, label in (all_permissions or []) %}
         <label class="perm-item">
           <input type="checkbox" name="permissions" value="{{ key }}"
-            {% if key in selected_permissions %}checked{% endif %}
+            {% if key in (selected_permissions or []) %}checked{% endif %}
             class="perm-cb">
           <span>{{ label }}</span>
         </label>
@@ -88,7 +88,7 @@
 </style>
 <script>
 (function(){
-  var defaults = {{ role_defaults | tojson }};
+  var defaults = {{ (role_defaults or {}) | tojson }};
   var roleSelect = document.getElementById('roleSelect');
   function applyRole(role) {
     var list = defaults[role] || defaults['receptionist'] || [];

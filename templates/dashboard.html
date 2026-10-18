@@ -7,10 +7,10 @@
     <p style="color:var(--muted);margin:0.25rem 0 0;font-size:0.9rem;">Operations overview · Stronger Ties</p>
   </div>
   <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-    {% if has_perm('invoices_create') or session.get('role') in ['admin','manager','accountant','receptionist'] %}
+    {% if session.get('role') in ['admin','manager','accountant','receptionist','operations'] %}
     <a href="{{ url_for('create_invoice_page') }}" class="btn btn-primary">+ New Invoice</a>
     {% endif %}
-    {% if has_perm('financial') or session.get('role') in ['admin','manager','accountant'] %}
+    {% if session.get('role') in ['admin','manager','accountant'] %}
     <a href="{{ url_for('financial_report') }}" class="btn btn-outline">Financial Report</a>
     {% endif %}
   </div>

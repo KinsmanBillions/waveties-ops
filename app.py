@@ -157,14 +157,17 @@ def permissions_for_role(role):
 
 
 def has_perm(perm):
-    if not session.get("username"):
+    try:
+        if not session.get("username"):
+            return False
+        if normalize_role(session.get("role")) == "admin":
+            return True
+        perms = session.get("permissions") or []
+        if isinstance(perms, str):
+            perms = parse_permissions(perms)
+        return perm in perms
+    except Exception:
         return False
-    if normalize_role(session.get("role")) == "admin":
-        return True
-    perms = session.get("permissions") or []
-    if isinstance(perms, str):
-        perms = parse_permissions(perms)
-    return perm in perms
 
 
 
@@ -337,7 +340,10 @@ def ops_status_required(f):
 # ──────────────────────────────────────────────────────────────
 @app.context_processor
 def inject_perms():
-    return {"has_perm": has_perm, "PERM_LABELS": PERM_LABELS}
+    try:
+        return {"has_perm": has_perm, "PERM_LABELS": PERM_LABELS}
+    except Exception:
+        return {"has_perm": lambda *_: False, "PERM_LABELS": {}}
 
 @app.route("/")
 def index():
@@ -611,7 +617,13 @@ def dashboard():
         "total_amount": total_amount,
         "outstanding": outstanding,
     }
-    ops_stats = ops.ops_kpis()
+    try:
+        ops_stats = ops.ops_kpis()
+    except Exception:
+        ops_stats = {
+            "active_orders": 0, "pending_payments": 0, "in_transit": 0,
+            "revenue_usd": 0, "active_clients": 0,
+        }
     month = datetime.now().strftime("%Y-%m")
     try:
         exp_summary = ops.expense_summary(month)
@@ -623,17 +635,25 @@ def dashboard():
     except Exception:
         inc_summary = {"total_usd": 0, "received_usd": 0, "pending_usd": 0, "by_category": []}
         pnl = {"income_usd": 0, "expense_usd": 0, "net_usd": 0}
+    try:
+        wallets = (load_receiving_accounts() or {}).get("wallets") or {}
+    except Exception:
+        wallets = {}
+    try:
+        recent_orders = ops.order_list()[:8]
+    except Exception:
+        recent_orders = []
     return render_template(
         "dashboard.html",
         invoices=sorted_invs[:15],
         stats=stats,
         ops_stats=ops_stats,
-        recent_orders=ops.order_list()[:8],
+        recent_orders=recent_orders,
         exp_summary=exp_summary,
         inc_summary=inc_summary,
         pnl=pnl,
         exp_month=month,
-        wallets=(load_receiving_accounts() or {}).get("wallets") or {},
+        wallets=wallets,
         company=COMPANY,
         user=session,
     )
