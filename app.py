@@ -40,6 +40,23 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
+
+@app.errorhandler(500)
+def internal_error(e):
+    import traceback
+    tb = traceback.format_exc()
+    # Show error so we can fix (remove after stable)
+    return (
+        "<h1>WaveTies Error</h1>"
+        "<p>Copy this message and send it for support:</p>"
+        "<pre style=\"background:#111;color:#0f0;padding:1rem;overflow:auto;font-size:12px;\">"
+        + (tb or str(e))
+        + "</pre>",
+        500,
+    )
+
+
+
 try:
     from paths_config import DATA_DIR
 except Exception:
