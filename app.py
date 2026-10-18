@@ -1516,6 +1516,75 @@ def reapply_wallet(old_effect, new_effect, currency=None):
     if new_acc and new_delta:
         adjust_wallet(new_acc, new_delta, currency)
 
+
+
+def rebuild_wallet_balances():
+    """Recalculate Cash/MoMo/Bank from incomes, expenses, and invoice payments.
+    Expenses without an account are ignored (cannot know which wallet).
+    Starting balances are reset to 0 then all linked movements applied.
+    """
+    data = load_receiving_accounts()
+    wallets = data.get("wallets") or {}
+    for key in ("cash", "momo", "bank"):
+        w = wallets.get(key) or {}
+        wallets[key] = {
+            "label": w.get("label") or {"cash": "Cash on Hand", "momo": "Mobile Money", "bank": "Bank Account"}.get(key, key),
+            "balance": 0.0,
+            "currency": w.get("currency") or "GHS",
+        }
+
+    # Expenses (Paid) → subtract
+    try:
+        for e in ops.get_all("expenses", order_by="expense_date DESC") or []:
+            if (e.get("status") or "") != "Paid":
+                continue
+            acc = (e.get("account") or "").strip()
+            if acc not in wallets:
+                continue
+            try:
+                amt = float(e.get("amount") or 0)
+            except Exception:
+                amt = 0.0
+            wallets[acc]["balance"] = round(wallets[acc]["balance"] - amt, 2)
+    except Exception:
+        pass
+
+    # Incomes (Received/Cleared) → add
+    try:
+        for i in ops.get_all("incomes", order_by="income_date DESC") or []:
+            if (i.get("status") or "") not in ("Received", "Cleared"):
+                continue
+            acc = (i.get("account") or "").strip()
+            if acc not in wallets:
+                continue
+            try:
+                amt = float(i.get("amount") or 0)
+            except Exception:
+                amt = 0.0
+            wallets[acc]["balance"] = round(wallets[acc]["balance"] + amt, 2)
+    except Exception:
+        pass
+
+    # Invoice payments → add
+    try:
+        db = load_db()
+        for inv in (db.get("invoices") or {}).values():
+            for pay in inv.get("payments") or []:
+                acc = (pay.get("account") or "").strip()
+                if acc not in wallets:
+                    continue
+                try:
+                    amt = float(pay.get("amount") or 0)
+                except Exception:
+                    amt = 0.0
+                wallets[acc]["balance"] = round(wallets[acc]["balance"] + amt, 2)
+    except Exception:
+        pass
+
+    data["wallets"] = wallets
+    save_receiving_accounts(data)
+    return wallets
+
 def period_date_range(period, start=None, end=None):
     """Return (start_date, end_date, label) for report presets."""
     today = datetime.now().date()
@@ -1534,6 +1603,17 @@ def period_date_range(period, start=None, end=None):
     return start_d.isoformat(), today.isoformat(), today.strftime("%B %Y")
 
 
+
+
+
+@app.route("/admin/accounts/rebuild-wallets", methods=["POST"])
+@login_required
+@admin_required
+def admin_rebuild_wallets():
+    wallets = rebuild_wallet_balances()
+    parts = [f"{k}: {w.get('currency','')} {w.get('balance',0):.2f}" for k, w in wallets.items()]
+    flash("Balances rebuilt from linked transactions — " + "; ".join(parts), "success")
+    return redirect(url_for("admin_treasury"))
 
 @app.route("/admin/accounts", methods=["GET", "POST"])
 @login_required

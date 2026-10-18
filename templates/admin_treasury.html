@@ -1,9 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Receiving Accounts – WaveTies{% endblock %}
 {% block content %}
-<div class="page-header">
-  <h1>Receiving Accounts</h1>
-  <a href="{{ url_for('dashboard') }}" class="btn btn-outline">← Dashboard</a>
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+  <h1 style="margin:0;">Receiving Accounts</h1>
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+    <form method="post" action="{{ url_for('admin_rebuild_wallets') }}" onsubmit="return confirm('Rebuild Cash/MoMo/Bank from all linked income, expenses and invoice payments? Opening balances will be reset to 0 first.');">
+      <button type="submit" class="btn btn-outline">Rebuild balances from transactions</button>
+    </form>
+    <a href="{{ url_for('dashboard') }}" class="btn btn-outline">← Dashboard</a>
+  </div>
 </div>
 
 <p style="color:var(--muted);margin-bottom:1.25rem;font-size:0.9rem;">
