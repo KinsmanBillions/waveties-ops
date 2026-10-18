@@ -1976,6 +1976,23 @@ def admin_smtp():
 ORDER_STATUSES = ["Inquiry", "Confirmed", "Payment Pending", "Paid / Processing",
                   "In Transit", "Delivered", "Closed", "Cancelled", "On Hold"]
 SERVICE_TYPES = ["SHIP", "SRC", "BFM", "RMB", "PAY", "VAL", "COMBO"]
+SERVICE_LABELS = {
+    "SHIP": "Shipping", "SRC": "Sourcing", "BFM": "Buy For Me",
+    "RMB": "RMB / Yuan", "PAY": "Payment", "VAL": "Valuation", "COMBO": "Combo Service",
+}
+DEFAULT_BFM_FEE_PERCENT = 5.0
+
+
+def get_bfm_fee_percent():
+    try:
+        return float(ops.get_setting("bfm_fee_percent", str(DEFAULT_BFM_FEE_PERCENT)))
+    except Exception:
+        return DEFAULT_BFM_FEE_PERCENT
+
+
+def get_bfm_fee_rate():
+    return get_bfm_fee_percent() / 100.0
+
 PAY_STATUSES = ["Unpaid", "Partial", "Paid", "Refunded", "Waived"]
 CURRENCIES = ["USD", "EUR", "GBP", "CNY", "JPY", "CHF", "CAD", "AUD", "NZD", "INR", "AED", "SAR", "QAR", "KWD", "BHD", "OMR", "SGD", "HKD", "KRW", "TWD", "THB", "MYR", "IDR", "PHP", "VND", "TRY", "RUB", "BRL", "MXN", "ARS", "CLP", "COP", "PEN", "EGP", "MAD", "TND", "DZD", "LYD", "SDG", "SSP", "NGN", "GHS", "XOF", "GMD", "SLL", "LRD", "GNF", "CVE", "MRU", "XAF", "CDF", "AOA", "STN", "KES", "TZS", "UGX", "RWF", "BIF", "ETB", "SOS", "DJF", "ERN", "SCR", "KMF", "MGA", "MUR", "ZAR", "BWP", "NAD", "ZMW", "MWK", "MZN", "SZL", "LSL", "ZWL"]
 INCOTERMS = ["EXW", "FCA", "FOB", "CFR", "CIF", "CPT", "CIP", "DAP", "DPU", "DDP", "—"]
@@ -2095,6 +2112,8 @@ def ops_orders():
     return render_template("ops_orders.html", orders=orders, clients=clients,
                            company=COMPANY, user=session,
                            statuses=ORDER_STATUSES, services=SERVICE_TYPES,
+                           service_labels=SERVICE_LABELS,
+                           bfm_fee_percent=get_bfm_fee_percent(),
                            currencies=CURRENCIES, incoterms=INCOTERMS)
 
 
@@ -2172,6 +2191,43 @@ def ops_order_status(order_id):
 
 @app.route("/ops/orders/<order_id>/invoice", methods=["GET", "POST"])
 @login_required
+
+def _bfm_invoice_items(order, order_id, amount, form):
+    """Build invoice line items; for BFM optionally add service charge % on total."""
+    items = [{
+        "tracking": form.get("tracking") or order_id,
+        "item_name": order.get("description") or "Logistics services",
+        "transport": form.get("transport") or (
+            "SEA_FREIGHT" if order.get("service_type") == "SHIP" else "OTHER"
+        ),
+        "boxes": int(form.get("boxes", 1) or 1),
+        "weight_kg": float(form.get("weight_kg", 0) or 0),
+        "vol_cbm": float(form.get("vol_cbm", 0) or 0),
+        "order_number": order_id,
+        "amount": amount,
+    }]
+    is_bfm = (order.get("service_type") or "").upper() == "BFM"
+    apply = form.get("apply_bfm_fee") in ("1", "on", "yes", "true")
+    if is_bfm and apply:
+        try:
+            pct = float(form.get("bfm_fee_percent") or get_bfm_fee_percent())
+        except Exception:
+            pct = get_bfm_fee_percent()
+        fee = round(float(amount or 0) * (pct / 100.0), 2)
+        if fee > 0:
+            items.append({
+                "tracking": form.get("tracking") or order_id,
+                "item_name": f"BFM service charge ({pct:g}%)",
+                "transport": "OTHER",
+                "boxes": 0,
+                "weight_kg": 0,
+                "vol_cbm": 0,
+                "order_number": order_id,
+                "amount": fee,
+            })
+    return items
+
+
 def ops_order_to_invoice(order_id):
     """Create an invoice pre-filled from an order."""
     order = ops.get_one("orders", "order_id", order_id)
@@ -2203,18 +2259,7 @@ def ops_order_to_invoice(order_id):
                 "currency": currency,
                 "tax": float(request.form.get("tax", 0) or 0),
                 "paid": float(request.form.get("paid", 0) or 0),
-                "items": [{
-                    "tracking": request.form.get("tracking") or order_id,
-                    "item_name": order.get("description") or "Logistics services",
-                    "transport": request.form.get("transport") or (
-                        "SEA_FREIGHT" if order.get("service_type") == "SHIP" else "OTHER"
-                    ),
-                    "boxes": int(request.form.get("boxes", 1) or 1),
-                    "weight_kg": float(request.form.get("weight_kg", 0) or 0),
-                    "vol_cbm": float(request.form.get("vol_cbm", 0) or 0),
-                    "order_number": order_id,
-                    "amount": amount,
-                }],
+                "items": _bfm_invoice_items(order, order_id, amount, request.form),
                 "momo": momo_val,
                 "momo_provider": momo_provider,
                 "bank_lines": [
@@ -2235,9 +2280,16 @@ def ops_order_to_invoice(order_id):
             flash(f"Error: {e}", "danger")
             return redirect(url_for("ops_order_to_invoice", order_id=order_id))
     ra = load_receiving_accounts()
+    bfm_pct = get_bfm_fee_percent()
+    base_amt = float(order.get("order_value") or 0)
+    is_bfm = (order.get("service_type") or "").upper() == "BFM"
+    bfm_fee_preview = round(base_amt * (bfm_pct / 100.0), 2) if is_bfm else 0.0
     return render_template(
         "ops_order_invoice.html",
         order=order, client=client, company=COMPANY, user=session,
+        bfm_fee_percent=bfm_pct,
+        bfm_fee_preview=bfm_fee_preview,
+        is_bfm=is_bfm,
         default_momo=ra.get("momo") or COMPANY.get("momo", ""),
         default_bank="\n".join(ra.get("bank_lines") or COMPANY.get("bank_lines", [])),
         default_momo_provider=ra.get("momo_provider") or "TELECEL CASH",

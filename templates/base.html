@@ -428,6 +428,69 @@
     details summary { list-style: none; }
     details summary::-webkit-details-marker { display: none; }
 
+  
+    /* Richer UI system */
+    .page-header h1 { letter-spacing: -0.02em; }
+    .page-sub { color: var(--muted); font-size: 0.88rem; margin-top: 0.2rem; }
+    .card {
+      box-shadow: 0 4px 24px rgba(10, 37, 64, 0.06);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+    .card-title {
+      font-size: 0.95rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: 0.85rem;
+      padding-bottom: 0.55rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .kpi-card, .stat-card {
+      border-radius: 14px;
+      box-shadow: 0 2px 12px rgba(10,37,64,0.05);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .kpi-card:hover, .stat-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(10,37,64,0.1);
+    }
+    table { border-collapse: separate; border-spacing: 0; }
+    table thead th {
+      background: #F1F5F9;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--muted);
+      font-weight: 700;
+      padding: 0.65rem 0.75rem;
+    }
+    table tbody tr:hover { background: #F8FAFC; }
+    table td { padding: 0.65rem 0.75rem; vertical-align: middle; }
+    .btn { border-radius: 8px; font-weight: 600; }
+    .btn-primary {
+      background: linear-gradient(135deg, #0077B6, #00B4D8);
+      border: none;
+      box-shadow: 0 2px 8px rgba(0,180,216,0.35);
+    }
+    .btn-primary:hover { filter: brightness(1.06); }
+    .svc-pill {
+      display: inline-block; padding: 0.18rem 0.55rem; border-radius: 999px;
+      font-size: 0.72rem; font-weight: 700; background: #E0F2FE; color: #0369A1;
+    }
+    .svc-BFM { background: #FEF3C7; color: #B45309; }
+    .svc-SHIP { background: #DBEAFE; color: #1D4ED8; }
+    .svc-SRC { background: #E0E7FF; color: #4338CA; }
+    .svc-RMB { background: #FCE7F3; color: #BE185D; }
+    .svc-PAY { background: #D1FAE5; color: #047857; }
+    .svc-VAL { background: #EDE9FE; color: #6D28D9; }
+    .svc-COMBO { background: #FFEDD5; color: #C2410C; }
+    .status-paid { color: #059669; font-weight: 700; font-size: 0.85rem; }
+    .status-due { color: #D97706; font-weight: 700; font-size: 0.85rem; }
+    .flash-messages .flash {
+      border-radius: 10px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+    }
+
   </style>
   {% block extra_css %}{% endblock %}
 </head>

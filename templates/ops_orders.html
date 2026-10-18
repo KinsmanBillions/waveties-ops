@@ -65,7 +65,7 @@
           <td><strong>{{ o.order_id }}</strong></td>
           <td>{{ o.order_date }}</td>
           <td>{{ clients.get(o.client_id, o.client_id) }}</td>
-          <td><span class="pill">{{ o.service_type }}</span></td>
+          <td><span class="svc-pill svc-{{ o.service_type }}">{{ o.service_type }}</span></td>
           <td style="max-width:200px">{{ o.description }}</td>
           <td>{{ "%.2f"|format(o.value_usd or 0) }}</td>
           <td><span class="pill">{{ o.status }}</span></td>

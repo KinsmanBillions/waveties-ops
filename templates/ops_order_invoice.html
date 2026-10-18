@@ -1,30 +1,32 @@
 {% extends "base.html" %}
-{% block title %}Invoice from Order – WaveTies{% endblock %}
+{% block title %}Invoice from Order {{ order.order_id }} – WaveTies{% endblock %}
 {% block content %}
 <div class="page-header">
-  <h1>Create Invoice from Order {{ order.order_id }}</h1>
-  <a href="{{ url_for('ops_orders') }}" class="btn btn-outline">← Back to Orders</a>
+  <div>
+    <h1 style="margin:0;">Invoice from Order</h1>
+    <p class="page-sub">{{ order.order_id }} · {{ order.service_type }}{% if is_bfm %} · Buy For Me{% endif %}</p>
+  </div>
+  <a href="{{ url_for('ops_orders') }}" class="btn btn-outline">← Orders</a>
+</div>
+
+<div class="card soft-card" style="margin-bottom:1rem;">
+  <div class="info-grid">
+    <div><span class="muted">Client</span><div class="info-val">{{ client.company_name or order.client_id }}</div></div>
+    <div><span class="muted">Service</span><div class="info-val"><span class="svc-pill svc-{{ order.service_type }}">{{ order.service_type }}</span></div></div>
+    <div><span class="muted">Order value</span><div class="info-val">{{ order.currency or 'USD' }} {{ '%.2f'|format(order.order_value or 0) }}</div></div>
+    <div><span class="muted">Description</span><div class="info-val">{{ order.description }}</div></div>
+  </div>
 </div>
 
 <div class="card">
-  <p><strong>Client:</strong> {{ client.company_name or order.client_id }}
-     {% if client.email %} · {{ client.email }}{% endif %}
-     {% if client.phone %} · {{ client.phone }}{% endif %}
-  </p>
-  <p><strong>Service:</strong> {{ order.service_type }} · {{ order.description }}</p>
-  <p><strong>Route:</strong> {{ order.origin or '—' }} → {{ order.destination or '—' }}</p>
-  <p><strong>Order value:</strong> {{ order.currency }} {{ "%.2f"|format(order.order_value or 0) }}
-     (USD {{ "%.2f"|format(order.value_usd or 0) }})</p>
-</div>
-
-<div class="card">
-  <div class="card-title">Invoice Details</div>
-  <form method="post">
+  <form method="POST" id="invForm">
     <div class="form-row">
-      <div class="form-group"><label>Amount</label>
-        <input type="number" step="0.01" name="amount" value="{{ order.order_value or order.value_usd or 0 }}">
+      <div class="form-group">
+        <label>Amount (goods / service total) *</label>
+        <input type="number" step="0.01" name="amount" id="baseAmount" value="{{ order.order_value or 0 }}" required>
       </div>
-      <div class="form-group"><label>Currency</label>
+      <div class="form-group">
+        <label>Currency</label>
         <select name="currency">
           {% set cur = order.currency or 'USD' %}
           {% for c in currencies %}
@@ -39,6 +41,36 @@
         <input type="number" step="0.01" name="paid" value="0">
       </div>
     </div>
+
+    {% if is_bfm %}
+    <div class="bfm-box">
+      <div class="bfm-title">BFM service charge</div>
+      <p class="muted" style="margin:0 0 0.75rem;font-size:0.85rem;">
+        Buy For Me orders can include a percentage on the order total (default {{ bfm_fee_percent }}%).
+      </p>
+      <div class="form-row">
+        <div class="form-group" style="flex:0 0 auto;">
+          <label class="check-label">
+            <input type="checkbox" name="apply_bfm_fee" value="1" id="applyBfm" checked>
+            Apply BFM charge
+          </label>
+        </div>
+        <div class="form-group">
+          <label>Rate %</label>
+          <input type="number" step="0.1" min="0" max="100" name="bfm_fee_percent" id="bfmPct" value="{{ bfm_fee_percent }}">
+        </div>
+        <div class="form-group">
+          <label>Charge amount</label>
+          <div class="fee-preview" id="feePreview">{{ order.currency or 'USD' }} {{ '%.2f'|format(bfm_fee_preview) }}</div>
+        </div>
+        <div class="form-group">
+          <label>Invoice total (est.)</label>
+          <div class="fee-preview total" id="totalPreview">{{ order.currency or 'USD' }} {{ '%.2f'|format((order.order_value or 0) + bfm_fee_preview) }}</div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <div class="form-row">
       <div class="form-group"><label>Due Days</label><input type="number" name="due_days" value="30"></div>
       <div class="form-group"><label>Tracking No.</label><input name="tracking" value="{{ order.order_id }}"></div>
@@ -71,4 +103,51 @@
     <button type="submit" class="btn btn-primary">Generate Invoice PDF</button>
   </form>
 </div>
+
+<style>
+.page-sub { color: var(--muted); font-size: 0.9rem; margin: 0.25rem 0 0; }
+.soft-card { background: linear-gradient(135deg, #f8fafc, #eef6fb); border: 1px solid var(--border); }
+.info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.85rem; }
+.muted { color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
+.info-val { font-weight: 600; margin-top: 0.15rem; }
+.bfm-box {
+  background: linear-gradient(135deg, #0A2540 0%, #0077B6 100%);
+  color: #fff; border-radius: 12px; padding: 1rem 1.15rem; margin: 0.5rem 0 1.1rem;
+}
+.bfm-title { font-weight: 700; margin-bottom: 0.25rem; }
+.bfm-box .muted { color: rgba(255,255,255,0.7); }
+.bfm-box label { color: rgba(255,255,255,0.9); }
+.bfm-box input[type=number] { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.25); color: #fff; }
+.fee-preview { font-size: 1.15rem; font-weight: 700; padding-top: 0.35rem; }
+.fee-preview.total { color: #6ee7b7; }
+.check-label { display: flex; align-items: center; gap: 0.4rem; font-weight: 600; cursor: pointer; padding-top: 1.4rem; }
+.svc-pill { display: inline-block; padding: 0.15rem 0.55rem; border-radius: 999px; font-size: 0.75rem; font-weight: 700; background: #E0F2FE; color: #0369A1; }
+.svc-BFM { background: #FEF3C7; color: #B45309; }
+.svc-SHIP { background: #DBEAFE; color: #1D4ED8; }
+.svc-SRC { background: #E0E7FF; color: #4338CA; }
+.svc-RMB { background: #FCE7F3; color: #BE185D; }
+</style>
+{% if is_bfm %}
+<script>
+(function(){
+  var base = document.getElementById('baseAmount');
+  var pct = document.getElementById('bfmPct');
+  var apply = document.getElementById('applyBfm');
+  var feeEl = document.getElementById('feePreview');
+  var totEl = document.getElementById('totalPreview');
+  function recalc(){
+    var a = parseFloat(base.value) || 0;
+    var p = parseFloat(pct.value) || 0;
+    var fee = apply.checked ? Math.round(a * p) / 100 : 0;
+    fee = Math.round(fee * 100) / 100;
+    var cur = '{{ order.currency or "USD" }}';
+    feeEl.textContent = cur + ' ' + fee.toFixed(2);
+    totEl.textContent = cur + ' ' + (a + fee).toFixed(2);
+  }
+  base.addEventListener('input', recalc);
+  pct.addEventListener('input', recalc);
+  apply.addEventListener('change', recalc);
+})();
+</script>
+{% endif %}
 {% endblock %}
