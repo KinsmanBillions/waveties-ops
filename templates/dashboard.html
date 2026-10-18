@@ -1,133 +1,160 @@
 {% extends "base.html" %}
 {% block title %}Dashboard – WaveTies{% endblock %}
-
 {% block content %}
-<div class="page-header">
-  <h1>Dashboard</h1>
-  <a href="{{ url_for('create_invoice_page') }}" class="btn btn-primary">+ New Invoice</a>
-</div>
-
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="label">Total Invoices</div>
-    <div class="value">{{ stats.total }}</div>
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.75rem;">
+  <div>
+    <h1 style="margin:0;letter-spacing:-0.02em;">Dashboard</h1>
+    <p style="color:var(--muted);margin:0.25rem 0 0;font-size:0.9rem;">Operations overview · Stronger Ties</p>
   </div>
-  <div class="stat-card" style="border-left-color:#F59E0B;">
-    <div class="label">Outstanding</div>
-    <div class="value">{{ stats.due }}</div>
-  </div>
-  <div class="stat-card" style="border-left-color:#10B981;">
-    <div class="label">Paid</div>
-    <div class="value">{{ stats.paid }}</div>
-  </div>
-  <div class="stat-card" style="border-left-color:#0A2540;">
-    <div class="label">Total Amount</div>
-    <div class="value" style="font-size:1.2rem;">GHS {{ "%.2f"|format(stats.total_amount) }}</div>
-  </div>
-  <div class="stat-card" style="border-left-color:#EF4444;">
-    <div class="label">Outstanding</div>
-    <div class="value" style="font-size:1.2rem;">GHS {{ "%.2f"|format(stats.outstanding) }}</div>
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+    {% if has_perm('invoices_create') or session.get('role') in ['admin','manager','accountant','receptionist'] %}
+    <a href="{{ url_for('create_invoice_page') }}" class="btn btn-primary">+ New Invoice</a>
+    {% endif %}
+    {% if has_perm('financial') or session.get('role') in ['admin','manager','accountant'] %}
+    <a href="{{ url_for('financial_report') }}" class="btn btn-outline">Financial Report</a>
+    {% endif %}
   </div>
 </div>
 
+<div class="kpi-grid dash-kpis">
+  <div class="kpi-card kpi-accent-cyan">
+    <div class="kpi-label">Total Invoices</div>
+    <div class="kpi-value">{{ stats.total }}</div>
+  </div>
+  <div class="kpi-card kpi-accent-amber">
+    <div class="kpi-label">Outstanding</div>
+    <div class="kpi-value">{{ stats.due }}</div>
+  </div>
+  <div class="kpi-card kpi-accent-green">
+    <div class="kpi-label">Paid</div>
+    <div class="kpi-value">{{ stats.paid }}</div>
+  </div>
+  <div class="kpi-card kpi-accent-navy">
+    <div class="kpi-label">Total Amount</div>
+    <div class="kpi-value" style="font-size:1.25rem;">GHS {{ '%.2f'|format(stats.total_amount) }}</div>
+  </div>
+  <div class="kpi-card kpi-accent-red">
+    <div class="kpi-label">Balance Due</div>
+    <div class="kpi-value" style="font-size:1.25rem;">GHS {{ '%.2f'|format(stats.outstanding) }}</div>
+  </div>
+</div>
 
-{% if ops_stats %}
-<div class="page-header" style="margin-top:0.5rem">
-  <h1 style="font-size:1.15rem">Operations Snapshot</h1>
-  <a href="{{ url_for('ops_orders') }}" class="btn btn-outline">View Orders</a>
-</div>
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="label">Active Orders</div>
-    <div class="value">{{ ops_stats.active_orders }}</div>
+<div class="section-label">Operations Snapshot</div>
+<div class="kpi-grid dash-kpis">
+  <div class="kpi-card">
+    <div class="kpi-label">Active Orders</div>
+    <div class="kpi-value">{{ ops_stats.active_orders if ops_stats else 0 }}</div>
   </div>
-  <div class="stat-card" style="border-left-color:#F59E0B;">
-    <div class="label">Pending Payments</div>
-    <div class="value">{{ ops_stats.pending_pay }}</div>
+  <div class="kpi-card">
+    <div class="kpi-label">Pending Payments</div>
+    <div class="kpi-value">{{ ops_stats.pending_payments if ops_stats else 0 }}</div>
   </div>
-  <div class="stat-card" style="border-left-color:#00B4D8;">
-    <div class="label">In Transit</div>
-    <div class="value">{{ ops_stats.in_transit }}</div>
+  <div class="kpi-card">
+    <div class="kpi-label">In Transit</div>
+    <div class="kpi-value">{{ ops_stats.in_transit if ops_stats else 0 }}</div>
   </div>
-  <div class="stat-card" style="border-left-color:#0A2540;">
-    <div class="label">Ops Revenue (USD)</div>
-    <div class="value" style="font-size:1.2rem;">${{ "%.2f"|format(ops_stats.total_rev) }}</div>
+  <div class="kpi-card">
+    <div class="kpi-label">Ops Revenue (USD)</div>
+    <div class="kpi-value" style="font-size:1.25rem;">${{ '%.2f'|format(ops_stats.revenue_usd if ops_stats else 0) }}</div>
   </div>
-  <div class="stat-card">
-    <div class="label">Active Clients</div>
-    <div class="value">{{ ops_stats.active_clients }}</div>
+  <div class="kpi-card">
+    <div class="kpi-label">Active Clients</div>
+    <div class="kpi-value">{{ ops_stats.active_clients if ops_stats else 0 }}</div>
   </div>
 </div>
-{% endif %}
+
+{# ── Cash position ── #}
+<div class="finance-hero">
+  <div class="finance-hero-header">
+    <div>
+      <div class="finance-eyebrow">Finance · {{ exp_month }}</div>
+      <h2 class="finance-title">Cash position</h2>
+      <p class="finance-sub">Income vs expenses this month (USD equivalent)</p>
+    </div>
+    <div class="finance-hero-actions">
+      <a href="{{ url_for('ops_incomes') }}" class="btn btn-sm btn-outline-light">Income</a>
+      <a href="{{ url_for('ops_expenses') }}" class="btn btn-sm btn-outline-light">Expenses</a>
+      <a href="{{ url_for('financial_report') }}" class="btn btn-sm btn-cyan">Full report</a>
+    </div>
+  </div>
+  <div class="finance-metrics">
+    <div class="finance-metric">
+      <div class="fm-label">Income received</div>
+      <div class="fm-value fm-positive">${{ '%.2f'|format(inc_summary.received_usd if inc_summary else 0) }}</div>
+    </div>
+    <div class="finance-metric">
+      <div class="fm-label">Expenses paid</div>
+      <div class="fm-value">${{ '%.2f'|format(exp_summary.paid_usd if exp_summary else 0) }}</div>
+    </div>
+    <div class="finance-metric finance-metric-net">
+      <div class="fm-label">Net (income − expenses)</div>
+      {% set net = pnl.net_usd if pnl else 0 %}
+      <div class="fm-value {% if net >= 0 %}fm-positive{% else %}fm-negative{% endif %}">
+        ${{ '%.2f'|format(net) }}
+      </div>
+    </div>
+  </div>
+  {% if wallets %}
+  <div class="wallet-strip">
+    <div class="wallet-strip-title">Account balances</div>
+    <div class="wallet-pills">
+      {% for key in ['cash','momo','bank'] %}
+      {% set w = wallets.get(key, {}) %}
+      <div class="wallet-pill">
+        <span class="wp-label">{{ w.label or key }}</span>
+        <span class="wp-value">{{ w.currency or 'GHS' }} {{ '%.2f'|format(w.balance or 0) }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+</div>
 
 {% if recent_orders %}
-<div class="card">
-  <div class="card-title">Recent Orders</div>
+<div class="card" style="margin-top:1.25rem;">
+  <div class="card-title" style="display:flex;justify-content:space-between;align-items:center;">
+    <span>Recent Orders</span>
+    <a href="{{ url_for('ops_orders') }}" class="btn btn-sm btn-outline">View all</a>
+  </div>
+  <div class="table-wrap">
   <table>
     <thead>
-      <tr><th>Order ID</th><th>Date</th><th>Client</th><th>Service</th><th>USD</th><th>Status</th><th></th></tr>
+      <tr><th>Order</th><th>Client</th><th>Type</th><th>USD</th><th>Status</th><th></th></tr>
     </thead>
     <tbody>
       {% for o in recent_orders %}
       <tr>
-        <td><strong>{{ o.order_id }}</strong></td>
-        <td>{{ o.order_date }}</td>
+        <td><b>{{ o.order_id }}</b></td>
         <td>{{ o.client_id }}</td>
         <td>{{ o.service_type }}</td>
-        <td>${{ "%.2f"|format(o.value_usd or 0) }}</td>
+        <td>${{ '%.2f'|format(o.value_usd or 0) }}</td>
         <td><span class="pill">{{ o.status }}</span></td>
         <td><a class="btn btn-sm" href="{{ url_for('ops_order_to_invoice', order_id=o.order_id) }}">Invoice</a></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 
-<div class="card">
-  
-<div class="card" style="margin-top:1rem;">
-  <div class="card-title">Cash position this month ({{ exp_month }})</div>
-  <div class="kpi-grid">
-    <div class="kpi-card">
-      <div class="kpi-label">Income received (USD)</div>
-      <div class="kpi-value" style="color:#0a7;">${{ '%.2f'|format(inc_summary.received_usd if inc_summary else 0) }}</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Expenses paid (USD)</div>
-      <div class="kpi-value">${{ '%.2f'|format(exp_summary.paid_usd if exp_summary else 0) }}</div>
-    </div>
-    <div class="kpi-card">
-      <div class="kpi-label">Net (income − expenses)</div>
-      <div class="kpi-value">${{ '%.2f'|format(pnl.net_usd if pnl else 0) }}</div>
-    </div>
-  </div>
-  <p style="margin-top:0.75rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
-    <a href="{{ url_for('ops_incomes') }}" class="btn btn-sm btn-outline">Income →</a>
-    <a href="{{ url_for('ops_expenses') }}" class="btn btn-sm btn-outline">Expenses →</a>
-  </p>
-</div>
-
-<div class="card-title">Recent Invoices</div>
+<div class="card" style="margin-top:1.25rem;">
+  <div class="card-title">Recent Invoices</div>
   {% if invoices %}
+  <div class="table-wrap">
   <table>
     <thead>
       <tr>
-        <th>Invoice No</th>
-        <th>Date</th>
-        <th>Customer</th>
-        <th>Total</th>
-        <th>Status</th>
-        <th></th>
+        <th>Invoice No</th><th>Date</th><th>Customer</th><th>Total</th><th>Status</th><th></th>
       </tr>
     </thead>
     <tbody>
       {% for no, inv in invoices %}
       <tr>
-        <td><a href="{{ url_for('view_invoice', invoice_no=no) }}">{{ no }}</a></td>
+        <td><a href="{{ url_for('view_invoice', invoice_no=no) }}"><b>{{ no }}</b></a></td>
         <td>{{ inv.invoice_date }}</td>
         <td>{{ inv.customer_name }}</td>
-        <td>{{ inv.currency or 'GHS' }} {{ "%.2f"|format(inv.total or 0) }}</td>
+        <td>{{ inv.currency or 'GHS' }} {{ '%.2f'|format(inv.total or 0) }}</td>
         <td>
           {% if (inv.balance_due or 0) <= 0 %}
             <span class="status-paid">Paid</span>
@@ -135,15 +162,98 @@
             <span class="status-due">Due</span>
           {% endif %}
         </td>
-        <td>
-          <a href="{{ url_for('download_pdf', invoice_no=no) }}" class="btn btn-sm btn-outline">PDF</a>
-        </td>
+        <td><a href="{{ url_for('download_pdf', invoice_no=no) }}" class="btn btn-sm btn-outline">PDF</a></td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   {% else %}
   <p style="color:var(--muted);">No invoices yet. <a href="{{ url_for('create_invoice_page') }}">Create the first one</a>.</p>
   {% endif %}
 </div>
+
+<style>
+.dash-kpis { margin-bottom: 1.25rem; }
+.kpi-accent-cyan { border-top: 3px solid #00B4D8; }
+.kpi-accent-amber { border-top: 3px solid #F59E0B; }
+.kpi-accent-green { border-top: 3px solid #10B981; }
+.kpi-accent-navy { border-top: 3px solid #0A2540; }
+.kpi-accent-red { border-top: 3px solid #EF4444; }
+.section-label {
+  font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--muted); margin: 0.5rem 0 0.65rem;
+}
+.finance-hero {
+  background: linear-gradient(135deg, #0A2540 0%, #0d3a5c 55%, #0077B6 100%);
+  border-radius: 16px;
+  padding: 1.35rem 1.5rem 1.25rem;
+  color: #fff;
+  box-shadow: 0 12px 40px rgba(10,37,64,0.28);
+  margin-top: 0.5rem;
+}
+.finance-eyebrow {
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: rgba(255,255,255,0.65); margin-bottom: 0.2rem;
+}
+.finance-title { font-size: 1.35rem; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+.finance-sub { font-size: 0.85rem; color: rgba(255,255,255,0.7); margin: 0.2rem 0 0; }
+.finance-hero-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.1rem;
+}
+.finance-hero-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.btn-outline-light {
+  border: 1px solid rgba(255,255,255,0.35); color: #fff; background: transparent;
+  padding: 0.3rem 0.65rem; border-radius: 6px; font-size: 0.8rem; text-decoration: none;
+}
+.btn-outline-light:hover { background: rgba(255,255,255,0.12); text-decoration: none; color: #fff; }
+.btn-cyan {
+  background: #00B4D8; color: #0A2540; font-weight: 600;
+  padding: 0.3rem 0.65rem; border-radius: 6px; font-size: 0.8rem; text-decoration: none; border: none;
+}
+.btn-cyan:hover { background: #48cae4; text-decoration: none; color: #0A2540; }
+.finance-metrics {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem;
+}
+@media (max-width: 720px) {
+  .finance-metrics { grid-template-columns: 1fr; }
+}
+.finance-metric {
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+}
+.finance-metric-net {
+  background: rgba(0,180,216,0.18);
+  border-color: rgba(0,180,216,0.35);
+}
+.fm-label { font-size: 0.75rem; color: rgba(255,255,255,0.7); margin-bottom: 0.25rem; }
+.fm-value { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.02em; }
+.fm-positive { color: #6ee7b7; }
+.fm-negative { color: #fca5a5; }
+.wallet-strip {
+  margin-top: 1rem; padding-top: 0.9rem;
+  border-top: 1px solid rgba(255,255,255,0.15);
+}
+.wallet-strip-title {
+  font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: rgba(255,255,255,0.55); margin-bottom: 0.5rem;
+}
+.wallet-pills { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.wallet-pill {
+  background: rgba(255,255,255,0.1);
+  border-radius: 999px;
+  padding: 0.35rem 0.85rem;
+  display: flex; gap: 0.5rem; align-items: center;
+  font-size: 0.8rem;
+}
+.wp-label { color: rgba(255,255,255,0.7); }
+.wp-value { font-weight: 700; color: #fff; }
+.pill {
+  display: inline-block; background: #E8F4FC; color: #0077B6;
+  font-size: 0.72rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px;
+}
+</style>
 {% endblock %}

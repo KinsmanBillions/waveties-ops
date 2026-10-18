@@ -79,6 +79,94 @@ FINANCE_ROLES = {"admin", "manager", "accountant"}  # mark paid, payments, accou
 OPS_STATUS_ROLES = {"admin", "manager", "operations"}  # update order/shipment status
 CREATE_ROLES = {"admin", "manager", "accountant", "operations", "receptionist", "worker"}
 
+PERMISSIONS = [
+    ("dashboard", "Dashboard"),
+    ("invoices_view", "View invoices"),
+    ("invoices_create", "Create invoices"),
+    ("invoices_edit", "Edit / delete invoices"),
+    ("invoices_pay", "Record invoice payments"),
+    ("customers", "Customers (invoice contacts)"),
+    ("clients_view", "View clients"),
+    ("clients_manage", "Add / edit / delete clients"),
+    ("orders_view", "View orders"),
+    ("orders_manage", "Create / edit / delete orders"),
+    ("orders_status", "Update order & shipment status"),
+    ("payments", "Ops payments register"),
+    ("expenses", "Expenses"),
+    ("incomes", "Income"),
+    ("shipments", "Shipments"),
+    ("rmb", "RMB desk"),
+    ("sourcing", "Sourcing"),
+    ("reports", "Reports"),
+    ("financial", "Financial report & PDF"),
+    ("accounts", "Accounts / treasury"),
+    ("users", "Manage users & permissions"),
+    ("smtp", "Email / SMTP settings"),
+    ("reset_data", "Reset system data"),
+]
+PERM_KEYS = [p[0] for p in PERMISSIONS]
+PERM_LABELS = dict(PERMISSIONS)
+ROLE_DEFAULT_PERMISSIONS = {
+    "admin": list(PERM_KEYS),
+    "manager": [
+        "dashboard", "invoices_view", "invoices_create", "invoices_edit", "invoices_pay",
+        "customers", "clients_view", "clients_manage", "orders_view", "orders_manage",
+        "orders_status", "payments", "expenses", "incomes", "shipments", "rmb", "sourcing",
+        "reports", "financial", "accounts",
+    ],
+    "accountant": [
+        "dashboard", "invoices_view", "invoices_create", "invoices_pay", "customers",
+        "clients_view", "orders_view", "payments", "expenses", "incomes",
+        "reports", "financial", "accounts",
+    ],
+    "operations": [
+        "dashboard", "invoices_view", "clients_view", "orders_view", "orders_manage",
+        "orders_status", "shipments", "rmb", "sourcing",
+    ],
+    "receptionist": [
+        "dashboard", "invoices_view", "invoices_create", "customers",
+        "clients_view", "orders_view", "orders_manage",
+    ],
+}
+
+
+def parse_permissions(raw):
+    if raw is None or raw == "":
+        return []
+    if isinstance(raw, list):
+        return [str(x) for x in raw]
+    s = str(raw).strip()
+    if not s:
+        return []
+    if s.startswith("["):
+        try:
+            import json as _json
+            data = _json.loads(s)
+            if isinstance(data, list):
+                return [str(x) for x in data]
+        except Exception:
+            pass
+    return [x.strip() for x in s.split(",") if x.strip()]
+
+
+def permissions_for_role(role):
+    r = normalize_role(role)
+    if r == "admin":
+        return list(PERM_KEYS)
+    return list(ROLE_DEFAULT_PERMISSIONS.get(r, ROLE_DEFAULT_PERMISSIONS["receptionist"]))
+
+
+def has_perm(perm):
+    if not session.get("username"):
+        return False
+    if normalize_role(session.get("role")) == "admin":
+        return True
+    perms = session.get("permissions") or []
+    if isinstance(perms, str):
+        perms = parse_permissions(perms)
+    return perm in perms
+
+
 
 
 def form_order_id():
@@ -123,6 +211,12 @@ def init_users_db():
     # Migrate legacy "worker" → "receptionist"
     try:
         conn.execute("UPDATE users SET role='receptionist' WHERE role='worker'")
+        try:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+            if "permissions" not in cols:
+                conn.execute("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT ''")
+        except Exception:
+            pass
         conn.commit()
     except Exception:
         pass
@@ -167,7 +261,7 @@ def get_user(username):
 
 def list_users():
     conn = get_users_db()
-    rows = conn.execute("SELECT id, username, name, role, active, created_at FROM users ORDER BY username").fetchall()
+    rows = conn.execute("SELECT * FROM users ORDER BY username").fetchall()
     conn.close()
     return [dict(r) for r in rows]
 
@@ -200,41 +294,51 @@ def admin_required(f):
 
 
 def manage_required(f):
-    """Admin or Manager — edit/delete commercial records."""
+    """Admin/Manager or granular manage permissions."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if normalize_role(session.get("role")) not in MANAGE_ROLES:
-            flash("Manager or Admin access required.", "danger")
-            return redirect(url_for("dashboard"))
-        return f(*args, **kwargs)
+        if normalize_role(session.get("role")) in MANAGE_ROLES:
+            return f(*args, **kwargs)
+        if any(has_perm(p) for p in ("invoices_edit", "clients_manage", "orders_manage")):
+            return f(*args, **kwargs)
+        flash("Manager or Admin access required.", "danger")
+        return redirect(url_for("dashboard"))
     return decorated
 
 
 def finance_required(f):
-    """Admin, Manager, or Accountant — payments / mark paid / accounts."""
+    """Finance roles or granular finance permissions."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if normalize_role(session.get("role")) not in FINANCE_ROLES:
-            flash("Finance access required (Accountant, Manager, or Admin).", "danger")
-            return redirect(url_for("dashboard"))
-        return f(*args, **kwargs)
+        if normalize_role(session.get("role")) in FINANCE_ROLES:
+            return f(*args, **kwargs)
+        if any(has_perm(p) for p in ("invoices_pay", "expenses", "incomes", "accounts", "payments", "financial")):
+            return f(*args, **kwargs)
+        flash("Finance access required.", "danger")
+        return redirect(url_for("dashboard"))
     return decorated
 
 
 def ops_status_required(f):
-    """Admin, Manager, or Operations — update order/shipment/sourcing status."""
+    """Ops roles or orders_status permission."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if normalize_role(session.get("role")) not in OPS_STATUS_ROLES:
-            flash("Operations access required.", "danger")
-            return redirect(url_for("dashboard"))
-        return f(*args, **kwargs)
+        if normalize_role(session.get("role")) in OPS_STATUS_ROLES:
+            return f(*args, **kwargs)
+        if has_perm("orders_status"):
+            return f(*args, **kwargs)
+        flash("Operations access required.", "danger")
+        return redirect(url_for("dashboard"))
     return decorated
 
 
 # ──────────────────────────────────────────────────────────────
 # Auth routes
 # ──────────────────────────────────────────────────────────────
+@app.context_processor
+def inject_perms():
+    return {"has_perm": has_perm, "PERM_LABELS": PERM_LABELS}
+
 @app.route("/")
 def index():
     if "username" in session:
@@ -251,6 +355,11 @@ def login():
         if user and check_password_hash(user["password_hash"], password):
             session["username"] = user["username"]
             session["role"] = normalize_role(user["role"])
+            raw_perms = user.get("permissions") if isinstance(user, dict) else None
+            perms = parse_permissions(raw_perms)
+            if not perms:
+                perms = permissions_for_role(user.get("role") if isinstance(user, dict) else "receptionist")
+            session["permissions"] = perms
             session["name"] = user["name"]
             flash(f"Welcome back, {user['name']}!", "success")
             return redirect(url_for("dashboard"))
@@ -524,6 +633,7 @@ def dashboard():
         inc_summary=inc_summary,
         pnl=pnl,
         exp_month=month,
+        wallets=(load_receiving_accounts() or {}).get("wallets") or {},
         company=COMPANY,
         user=session,
     )
@@ -1558,15 +1668,37 @@ def admin_user_new():
             flash("Username already exists.", "danger")
             return redirect(url_for("admin_user_new"))
         conn = get_users_db()
-        conn.execute(
-            "INSERT INTO users (username, password_hash, name, role, created_at) VALUES (?,?,?,?,?)",
-            (username, generate_password_hash(password), name, role, datetime.now().isoformat(timespec="seconds"))
-        )
+        selected = request.form.getlist("permissions")
+        if not selected:
+            selected = permissions_for_role(role)
+        if role == "admin":
+            selected = list(PERM_KEYS)
+        import json as _json
+        perms_json = _json.dumps(selected)
+        try:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, name, role, created_at, permissions) VALUES (?,?,?,?,?,?)",
+                (username, generate_password_hash(password), name, role, datetime.now().isoformat(timespec="seconds"), perms_json)
+            )
+        except Exception:
+            conn.execute(
+                "INSERT INTO users (username, password_hash, name, role, created_at) VALUES (?,?,?,?,?)",
+                (username, generate_password_hash(password), name, role, datetime.now().isoformat(timespec="seconds"))
+            )
         conn.commit()
         conn.close()
-        flash(f"User {username} created.", "success")
+        flash(f"User {username} created with {len(selected)} permission(s).", "success")
         return redirect(url_for("admin_users"))
-    return render_template("admin_user_form.html", edit_user=None, company=COMPANY, user=session, roles=ROLES)
+    return render_template(
+        "admin_user_form.html",
+        edit_user=None,
+        company=COMPANY,
+        user=session,
+        roles=ROLES,
+        all_permissions=PERMISSIONS,
+        selected_permissions=permissions_for_role("receptionist"),
+        role_defaults=ROLE_DEFAULT_PERMISSIONS,
+    )
 
 
 @app.route("/admin/users/<int:uid>/edit", methods=["GET", "POST"])
@@ -1585,19 +1717,50 @@ def admin_user_edit(uid):
         role = normalize_role(request.form.get("role", "receptionist"))
         password = request.form.get("password", "")
         active = 1 if request.form.get("active") else 0
+        selected = request.form.getlist("permissions")
+        if not selected:
+            selected = permissions_for_role(role)
+        if role == "admin":
+            selected = list(PERM_KEYS)
+        import json as _json
+        perms_json = _json.dumps(selected)
         if password:
-            conn.execute(
-                "UPDATE users SET name=?, role=?, active=?, password_hash=? WHERE id=?",
-                (name, role, active, generate_password_hash(password), uid)
-            )
+            try:
+                conn.execute(
+                    "UPDATE users SET name=?, role=?, active=?, password_hash=?, permissions=? WHERE id=?",
+                    (name, role, active, generate_password_hash(password), perms_json, uid)
+                )
+            except Exception:
+                conn.execute(
+                    "UPDATE users SET name=?, role=?, active=?, password_hash=? WHERE id=?",
+                    (name, role, active, generate_password_hash(password), uid)
+                )
         else:
-            conn.execute("UPDATE users SET name=?, role=?, active=? WHERE id=?", (name, role, active, uid))
+            try:
+                conn.execute(
+                    "UPDATE users SET name=?, role=?, active=?, permissions=? WHERE id=?",
+                    (name, role, active, perms_json, uid)
+                )
+            except Exception:
+                conn.execute("UPDATE users SET name=?, role=?, active=? WHERE id=?", (name, role, active, uid))
         conn.commit()
         conn.close()
-        flash("User updated.", "success")
+        flash("User updated (permissions saved).", "success")
         return redirect(url_for("admin_users"))
     conn.close()
-    return render_template("admin_user_form.html", edit_user=edit_user, company=COMPANY, user=session, roles=ROLES)
+    selected = parse_permissions(edit_user.get("permissions"))
+    if not selected:
+        selected = permissions_for_role(edit_user.get("role"))
+    return render_template(
+        "admin_user_form.html",
+        edit_user=edit_user,
+        company=COMPANY,
+        user=session,
+        roles=ROLES,
+        all_permissions=PERMISSIONS,
+        selected_permissions=selected,
+        role_defaults=ROLE_DEFAULT_PERMISSIONS,
+    )
 
 
 

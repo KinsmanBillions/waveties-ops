@@ -1,14 +1,13 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Edit' if edit_user else 'New' }} User – WaveTies{% endblock %}
-
 {% block content %}
 <div class="page-header">
   <h1>{{ 'Edit User' if edit_user else 'New User' }}</h1>
   <a href="{{ url_for('admin_users') }}" class="btn btn-outline">← Back</a>
 </div>
 
-<div class="card" style="max-width:520px;">
-  <form method="POST">
+<div class="card" style="max-width:720px;">
+  <form method="POST" id="userForm">
     {% if not edit_user %}
     <div class="form-group">
       <label>Username *</label>
@@ -22,21 +21,40 @@
       <input type="text" name="name" value="{{ edit_user.name if edit_user else '' }}" required>
     </div>
     <div class="form-group">
-      <label>Role *</label>
-      <select name="role" required>
+      <label>Role preset *</label>
+      <select name="role" id="roleSelect" required>
         {% set current = edit_user.role if edit_user else 'receptionist' %}
         {% for value, label in roles %}
         <option value="{{ value }}" {% if current == value or (current == 'worker' and value == 'receptionist') %}selected{% endif %}>{{ label }}</option>
         {% endfor %}
       </select>
-      <p style="font-size:0.78rem;color:var(--muted);margin-top:0.35rem;line-height:1.4;">
-        <b>Receptionist</b> — create records only<br>
-        <b>Operations</b> — create + update order/shipment status<br>
-        <b>Accountant</b> — invoices, payments, mark paid, accounts view<br>
-        <b>Manager</b> — edit/delete commercial data + finance<br>
-        <b>Admin</b> — full system (users, email, reset)
+      <p style="font-size:0.78rem;color:var(--muted);margin-top:0.35rem;">
+        Choosing a role loads a default permission set. You can then tick/untick specific functions below.
       </p>
     </div>
+
+    <div class="form-group">
+      <label style="font-weight:700;">Permissions — what this user can do</label>
+      <p style="font-size:0.8rem;color:var(--muted);margin:0.25rem 0 0.6rem;">
+        Admin always has full access. For other roles, only checked items are allowed.
+      </p>
+      <div class="perm-grid" id="permGrid">
+        {% for key, label in all_permissions %}
+        <label class="perm-item">
+          <input type="checkbox" name="permissions" value="{{ key }}"
+            {% if key in selected_permissions %}checked{% endif %}
+            class="perm-cb">
+          <span>{{ label }}</span>
+        </label>
+        {% endfor %}
+      </div>
+      <div style="margin-top:0.5rem;display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button type="button" class="btn btn-sm btn-outline" id="permAll">Select all</button>
+        <button type="button" class="btn btn-sm btn-outline" id="permNone">Clear all</button>
+        <button type="button" class="btn btn-sm btn-outline" id="permRole">Load role defaults</button>
+      </div>
+    </div>
+
     <div class="form-group">
       <label>{{ 'New password (leave blank to keep)' if edit_user else 'Password *' }}</label>
       <input type="password" name="password" {% if not edit_user %}required{% endif %}>
@@ -46,7 +64,54 @@
       <label><input type="checkbox" name="active" value="1" {% if edit_user.active %}checked{% endif %}> Active</label>
     </div>
     {% endif %}
-    <button type="submit" class="btn btn-primary">Save</button>
+    <button type="submit" class="btn btn-primary">Save user</button>
   </form>
 </div>
+
+<style>
+.perm-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.4rem 0.75rem;
+  background: #F8FAFC;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.perm-item {
+  display: flex; align-items: flex-start; gap: 0.45rem;
+  font-size: 0.85rem; cursor: pointer; line-height: 1.35;
+}
+.perm-item input { margin-top: 0.2rem; }
+</style>
+<script>
+(function(){
+  var defaults = {{ role_defaults | tojson }};
+  var roleSelect = document.getElementById('roleSelect');
+  function applyRole(role) {
+    var list = defaults[role] || defaults['receptionist'] || [];
+    var set = {};
+    list.forEach(function(k){ set[k] = true; });
+    document.querySelectorAll('.perm-cb').forEach(function(cb){
+      if (role === 'admin') { cb.checked = true; return; }
+      cb.checked = !!set[cb.value];
+    });
+  }
+  document.getElementById('permRole').addEventListener('click', function(){
+    applyRole(roleSelect.value);
+  });
+  document.getElementById('permAll').addEventListener('click', function(){
+    document.querySelectorAll('.perm-cb').forEach(function(cb){ cb.checked = true; });
+  });
+  document.getElementById('permNone').addEventListener('click', function(){
+    document.querySelectorAll('.perm-cb').forEach(function(cb){ cb.checked = false; });
+  });
+  // When role changes, offer defaults (always apply for clarity)
+  roleSelect.addEventListener('change', function(){
+    applyRole(roleSelect.value);
+  });
+})();
+</script>
 {% endblock %}
