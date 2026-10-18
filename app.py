@@ -638,8 +638,8 @@ def dashboard():
         ops_stats = ops.ops_kpis()
     except Exception:
         ops_stats = {
-            "active_orders": 0, "pending_payments": 0, "in_transit": 0,
-            "revenue_usd": 0, "active_clients": 0,
+            "active_orders": 0, "pending_pay": 0, "in_transit": 0,
+            "total_rev": 0, "active_clients": 0,
         }
     month = datetime.now().strftime("%Y-%m")
     try:

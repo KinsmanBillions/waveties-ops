@@ -43,23 +43,23 @@
 <div class="kpi-grid dash-kpis">
   <div class="kpi-card">
     <div class="kpi-label">Active Orders</div>
-    <div class="kpi-value">{{ ops_stats.active_orders if ops_stats else 0 }}</div>
+    <div class="kpi-value">{{ (ops_stats or {}).get('active_orders', 0) }}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Pending Payments</div>
-    <div class="kpi-value">{{ ops_stats.pending_payments if ops_stats else 0 }}</div>
+    <div class="kpi-value">{{ (ops_stats or {}).get('pending_pay', (ops_stats or {}).get('pending_payments', 0)) }}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">In Transit</div>
-    <div class="kpi-value">{{ ops_stats.in_transit if ops_stats else 0 }}</div>
+    <div class="kpi-value">{{ (ops_stats or {}).get('in_transit', 0) }}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Ops Revenue (USD)</div>
-    <div class="kpi-value" style="font-size:1.25rem;">${{ '%.2f'|format(ops_stats.revenue_usd if ops_stats else 0) }}</div>
+    <div class="kpi-value" style="font-size:1.25rem;">${{ '%.2f'|format((ops_stats or {}).get('total_rev', (ops_stats or {}).get('revenue_usd', 0)) or 0) }}</div>
   </div>
   <div class="kpi-card">
     <div class="kpi-label">Active Clients</div>
-    <div class="kpi-value">{{ ops_stats.active_clients if ops_stats else 0 }}</div>
+    <div class="kpi-value">{{ (ops_stats or {}).get('active_clients', 0) }}</div>
   </div>
 </div>
 
