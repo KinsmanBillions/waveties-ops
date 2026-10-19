@@ -188,7 +188,7 @@ def init_ops_db():
         )""")
 
         # Migrations: link to cash accounts
-        for tbl, col in (("expenses", "account"), ("incomes", "account")):
+        for tbl, col in (("expenses", "account"), ("incomes", "account"), ("payments", "account")):
             try:
                 cols = [r[1] for r in c.execute(f"PRAGMA table_info({tbl})").fetchall()]
                 if col not in cols:

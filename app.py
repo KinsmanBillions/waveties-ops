@@ -1624,13 +1624,38 @@ def rebuild_wallet_balances():
     except Exception as ex:
         print(f"[WaveTies] rebuild invoice pays: {ex}", flush=True)
 
+    # 4) Ops payment register (Supplier Payment OUT, Owner Capital IN, etc.)
+    n_ops = 0
+    try:
+        for p in (ops.get_all("payments") or []):
+            acc = _acc(p.get("account"))
+            if not acc:
+                # fallback: notes may contain account=momo
+                notes = (p.get("notes") or "")
+                if "account=" in notes:
+                    acc = _acc(notes.split("account=")[-1].split()[0].strip(" ·,"))
+            if not acc:
+                continue
+            try:
+                amt = float(p.get("amount") or 0)
+            except Exception:
+                amt = 0.0
+            direction = (p.get("direction") or "IN").strip().upper()
+            if direction == "OUT":
+                wallets[acc]["balance"] = round(wallets[acc]["balance"] - amt, 2)
+            else:
+                wallets[acc]["balance"] = round(wallets[acc]["balance"] + amt, 2)
+            n_ops += 1
+    except Exception as ex:
+        print(f"[WaveTies] rebuild ops payments: {ex}", flush=True)
+
     data["wallets"] = wallets
     try:
         save_receiving_accounts(data)
     except Exception as ex:
         print(f"[WaveTies] save wallets failed: {ex}", flush=True)
     print(
-        f"[WaveTies] Wallets rebuilt: exp={n_exp} inc={n_inc} pay_only={n_pay} "
+        f"[WaveTies] Wallets rebuilt: exp={n_exp} inc={n_inc} pay_only={n_pay} ops={n_ops} "
         f"momo={wallets['momo']['balance']} cash={wallets['cash']['balance']} bank={wallets['bank']['balance']}",
         flush=True,
     )
@@ -2410,7 +2435,11 @@ def ops_payment_new():
     notes = (request.form.get("notes") or "").strip()
     if account:
         notes = (notes + f" · account={account}").strip(" ·")
-    ops.insert("payments", {
+    # Require account for OUT so manufacturer pays hit MoMo/Bank
+    if direction == "OUT" and not account:
+        flash("Select Pay from account (Cash / MoMo / Bank) for supplier OUT payments.", "danger")
+        return redirect(url_for("ops_payments"))
+    row = {
         "payment_id": pid,
         "pay_date": request.form.get("pay_date") or datetime.now().strftime("%Y-%m-%d"),
         "order_id": form_order_id(),
@@ -2425,19 +2454,30 @@ def ops_payment_new():
         "bank_channel": request.form.get("bank_channel", ""),
         "recorded_by": session.get("username", "Finance"),
         "notes": notes,
-    })
+        "account": account,
+    }
+    try:
+        ops.insert("payments", row)
+    except Exception:
+        # Older DB without account column — insert without it
+        row.pop("account", None)
+        ops.insert("payments", row)
+        try:
+            ops.update("payments", "payment_id", pid, {"account": account})
+        except Exception:
+            pass
     # Update cash/MoMo/bank when account selected
     if account and amount:
         delta = amount if direction == "IN" else -amount
-        adjust_wallet(account, delta, currency)
+        new_bal = adjust_wallet(account, delta, currency)
         flash(
             f"Payment {pid} recorded ({direction}). "
             f"{'Credited' if direction=='IN' else 'Deducted'} {currency} {amount:.2f} "
-            f"from {account} (≈ ${amount_usd:,.2f} USD).",
+            f"on {account}. Balance now {currency} {new_bal if new_bal is not None else '?'}.",
             "success",
         )
     else:
-        flash(f"Payment {pid} recorded. Select an account next time to update Cash/MoMo/Bank.", "success")
+        flash(f"Payment {pid} recorded (no wallet account selected).", "success")
     return redirect(url_for("ops_payments"))
 
 

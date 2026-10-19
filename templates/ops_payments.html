@@ -73,8 +73,8 @@
         </select>
       </div>
       <div class="form-group"><label>Pay from / into account</label>
-        <select name="account">
-          <option value="">— optional —</option>
+        <select name="account" id="payAccount">
+          <option value="">— select account —</option>
           {% if accounts %}
           {% for key, label in accounts %}
           <option value="{{ key }}">{{ label }}{% if wallets and wallets.get(key) %} — {{ wallets[key].currency }} {{ '%.2f'|format(wallets[key].balance or 0) }}{% endif %}</option>
