@@ -1541,9 +1541,10 @@ def reapply_wallet(old_effect, new_effect, currency=None):
 
 
 def rebuild_wallet_balances():
-    """Recalculate Cash/MoMo/Bank from expenses, incomes, and invoice payments.
+    """Recalculate Cash/MoMo/Bank from expenses + incomes.
 
-    Transaction history is the source of truth. Stored balances are overwritten.
+    Invoice payments that already created an Income row must NOT be counted again.
+    Only invoice payment lines without a linked income_id are applied separately.
     """
     data = load_receiving_accounts()
     wallets = data.get("wallets") or {}
@@ -1562,7 +1563,6 @@ def rebuild_wallet_balances():
         a = (val or "").strip().lower()
         if a in ("cash", "momo", "bank"):
             return a
-        # tolerate labels
         if "momo" in a or "mobile" in a:
             return "momo"
         if "cash" in a:
@@ -1577,11 +1577,11 @@ def rebuild_wallet_balances():
         except Exception:
             return 0.0
 
+    # 1) Expenses (Paid) → debit wallet
     try:
         expenses = ops.list_expenses(limit=5000) if hasattr(ops, "list_expenses") else (ops.get_all("expenses") or [])
         for e in expenses:
-            st = (e.get("status") or "").strip().lower()
-            if st != "paid":
+            if (e.get("status") or "").strip().lower() != "paid":
                 continue
             acc = _acc(e.get("account"))
             if not acc:
@@ -1591,11 +1591,11 @@ def rebuild_wallet_balances():
     except Exception as ex:
         print(f"[WaveTies] rebuild expenses: {ex}", flush=True)
 
+    # 2) Incomes (Received/Cleared) → credit wallet (includes Invoice Payment incomes)
     try:
         incomes = ops.list_incomes(limit=5000) if hasattr(ops, "list_incomes") else (ops.get_all("incomes") or [])
         for i in incomes:
-            st = (i.get("status") or "").strip().lower()
-            if st not in ("received", "cleared"):
+            if (i.get("status") or "").strip().lower() not in ("received", "cleared"):
                 continue
             acc = _acc(i.get("account"))
             if not acc:
@@ -1605,10 +1605,13 @@ def rebuild_wallet_balances():
     except Exception as ex:
         print(f"[WaveTies] rebuild incomes: {ex}", flush=True)
 
+    # 3) Invoice payments ONLY if they did not already create an income row
     try:
         db = load_db()
         for inv in (db.get("invoices") or {}).values():
             for pay in inv.get("payments") or []:
+                if (pay.get("income_id") or "").strip():
+                    continue  # already counted via income
                 acc = _acc(pay.get("account"))
                 if not acc:
                     continue
@@ -1627,11 +1630,12 @@ def rebuild_wallet_balances():
     except Exception as ex:
         print(f"[WaveTies] save wallets failed: {ex}", flush=True)
     print(
-        f"[WaveTies] Wallets rebuilt: exp={n_exp} inc={n_inc} pay={n_pay} "
+        f"[WaveTies] Wallets rebuilt: exp={n_exp} inc={n_inc} pay_only={n_pay} "
         f"momo={wallets['momo']['balance']} cash={wallets['cash']['balance']} bank={wallets['bank']['balance']}",
         flush=True,
     )
     return wallets, n_exp, n_inc, n_pay
+
 
 
 
