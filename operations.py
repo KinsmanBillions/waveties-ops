@@ -628,7 +628,18 @@ INCOME_CATEGORIES = [
     "Consultation & Agency",
     "Client Service Charge",
     "Other Operating Income",
+    # Capital / non-operating (cash in, not trading profit)
+    "Owner Capital / Investment",
+    "Owner Loan to Business",
+    "Partner Capital Injection",
 ]
+
+# Categories that increase cash but are NOT operating profit
+CAPITAL_INCOME_CATEGORIES = {
+    "Owner Capital / Investment",
+    "Owner Loan to Business",
+    "Partner Capital Injection",
+}
 
 INCOME_METHODS = [
     "Cash", "MTN MoMo", "Telecel Cash", "Bank Transfer", "Cheque", "Card", "Other"
@@ -692,6 +703,11 @@ def income_summary(month=None):
                 "SELECT SUM(amount_usd) FROM incomes WHERE status NOT IN ('Received','Cleared') AND income_date LIKE ?",
                 (f"{month}%",),
             ).fetchone()[0] or 0
+            capital = conn.execute(
+                "SELECT SUM(amount_usd) FROM incomes WHERE status IN ('Received','Cleared') "
+                "AND income_date LIKE ? AND category IN ('Owner Capital / Investment','Owner Loan to Business','Partner Capital Injection')",
+                (f"{month}%",),
+            ).fetchone()[0] or 0
         else:
             rows = conn.execute(
                 "SELECT category, currency, SUM(amount) as total, SUM(amount_usd) as total_usd, COUNT(*) as n "
@@ -703,24 +719,39 @@ def income_summary(month=None):
             pending = conn.execute(
                 "SELECT SUM(amount_usd) FROM incomes WHERE status NOT IN ('Received','Cleared')"
             ).fetchone()[0] or 0
+            capital = conn.execute(
+                "SELECT SUM(amount_usd) FROM incomes WHERE status IN ('Received','Cleared') "
+                "AND category IN ('Owner Capital / Investment','Owner Loan to Business','Partner Capital Injection')"
+            ).fetchone()[0] or 0
+    received = float(received or 0)
+    capital = float(capital or 0)
+    operating = max(0.0, received - capital)
     return {
         "by_category": [dict(r) for r in rows],
-        "received_usd": float(received),
-        "pending_usd": float(pending),
-        "total_usd": float(received) + float(pending),
+        "received_usd": received,
+        "operating_usd": operating,
+        "capital_usd": capital,
+        "pending_usd": float(pending or 0),
+        "total_usd": received + float(pending or 0),
     }
 
 
 def pnl_summary(month=None):
-    """Simple profit snapshot: income received vs expenses paid (USD eq.)."""
+    """Profit snapshot: operating income vs expenses (owner capital excluded from net)."""
     inc = income_summary(month)
     exp = expense_summary(month)
-    income = inc.get("received_usd") or 0
+    # Operating trading result — capital injections are equity, not profit
+    income = inc.get("operating_usd")
+    if income is None:
+        income = inc.get("received_usd") or 0
     expense = exp.get("paid_usd") or 0
+    capital = inc.get("capital_usd") or 0
     return {
-        "income_usd": income,
-        "expense_usd": expense,
-        "net_usd": income - expense,
+        "income_usd": float(income),
+        "expense_usd": float(expense),
+        "net_usd": float(income) - float(expense),
+        "capital_usd": float(capital),
+        "all_inflows_usd": float(inc.get("received_usd") or 0),
         "income_pending_usd": inc.get("pending_usd") or 0,
         "expense_pending_usd": exp.get("pending_usd") or 0,
         "month": month,

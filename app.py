@@ -2080,7 +2080,7 @@ CLIENT_TYPES = ["Importer", "Exporter", "Distributor", "SME", "Corporate", "Sour
 SHIP_MODES = ["Sea FCL", "Sea LCL", "Air", "Road", "Rail", "Multimodal"]
 SHIP_STATUSES = ["Booked", "Departed Origin", "In Transit", "Arrived Dest", "Customs",
                  "Out for Delivery", "Delivered", "Exception"]
-PAY_TYPES = ["Order Payment", "RMB Exchange", "Supplier Payment", "Refund", "Fee", "Other"]
+PAY_TYPES = ["Order Payment", "RMB Exchange", "Supplier Payment", "Owner Capital", "Owner Loan", "Refund", "Fee", "Other"]
 PAY_METHODS = ["Bank Transfer", "Mobile Money", "Cash", "Alipay", "WeChat Pay", "Credit", "Other"]
 RMB_TYPES = ["Client Exchange", "Supplier Payment", "Internal Transfer", "Other"]
 SRC_STATUSES = ["Request Received", "Sourcing", "Quotes Obtained", "Quote Sent to Client",
