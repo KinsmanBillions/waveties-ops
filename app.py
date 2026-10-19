@@ -2189,9 +2189,6 @@ def ops_order_status(order_id):
     return redirect(url_for("ops_orders"))
 
 
-@app.route("/ops/orders/<order_id>/invoice", methods=["GET", "POST"])
-@login_required
-
 def _bfm_invoice_items(order, order_id, amount, form):
     """Build invoice line items; for BFM optionally add service charge % on total."""
     items = [{
@@ -2228,6 +2225,8 @@ def _bfm_invoice_items(order, order_id, amount, form):
     return items
 
 
+@app.route("/ops/orders/<order_id>/invoice", methods=["GET", "POST"])
+@login_required
 def ops_order_to_invoice(order_id):
     """Create an invoice pre-filled from an order."""
     order = ops.get_one("orders", "order_id", order_id)
