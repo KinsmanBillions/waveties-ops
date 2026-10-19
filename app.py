@@ -652,6 +652,11 @@ def dashboard():
     except Exception:
         inc_summary = {"total_usd": 0, "received_usd": 0, "pending_usd": 0, "by_category": []}
         pnl = {"income_usd": 0, "expense_usd": 0, "net_usd": 0}
+    # Fix any GHS/USD 1:1 mistakes using live FX rates (idempotent)
+    try:
+        ops.recalc_usd_amounts()
+    except Exception as _fx:
+        print(f"[WaveTies] FX recalc: {_fx}", flush=True)
     # Always derive wallets from linked expenses / incomes / invoice payments
     try:
         wallets, _ne, _ni, _np = rebuild_wallet_balances()

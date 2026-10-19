@@ -469,13 +469,25 @@ def recalc_usd_amounts():
     n_i = n_e = 0
     with get_conn() as conn:
         for row in conn.execute("SELECT income_id, amount, currency FROM incomes").fetchall():
-            usd = to_usd(row["amount"], row["currency"])
-            conn.execute("UPDATE incomes SET amount_usd=? WHERE income_id=?", (usd, row["income_id"]))
+            d = dict(row)
+            cur = (d.get("currency") or "GHS").strip().upper() or "GHS"
+            usd = to_usd(d.get("amount"), cur)
+            conn.execute(
+                "UPDATE incomes SET amount_usd=?, currency=? WHERE income_id=?",
+                (usd, cur, d["income_id"]),
+            )
             n_i += 1
         for row in conn.execute("SELECT expense_id, amount, currency FROM expenses").fetchall():
-            usd = to_usd(row["amount"], row["currency"])
-            conn.execute("UPDATE expenses SET amount_usd=? WHERE expense_id=?", (usd, row["expense_id"]))
+            d = dict(row)
+            cur = (d.get("currency") or "GHS").strip().upper() or "GHS"
+            usd = to_usd(d.get("amount"), cur)
+            conn.execute(
+                "UPDATE expenses SET amount_usd=?, currency=? WHERE expense_id=?",
+                (usd, cur, d["expense_id"]),
+            )
             n_e += 1
+        conn.commit()
+    print(f"[WaveTies] recalc_usd: {n_i} incomes, {n_e} expenses", flush=True)
     return n_i, n_e
 
 
