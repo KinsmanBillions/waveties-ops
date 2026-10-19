@@ -2383,32 +2383,58 @@ def ops_payments():
     kpis = ops.ops_kpis()
     clients = ops.client_list()
     orders = ops.order_list()
+    ra = load_receiving_accounts()
     return render_template("ops_payments.html", payments=payments, kpis=kpis,
                            clients=clients, orders=orders, company=COMPANY, user=session,
-                           pay_types=PAY_TYPES, pay_methods=PAY_METHODS, currencies=CURRENCIES)
+                           pay_types=PAY_TYPES, pay_methods=PAY_METHODS, currencies=CURRENCIES,
+                           accounts=ACCOUNT_OPTIONS, wallets=(ra.get("wallets") or {}))
 
 
 @app.route("/ops/payments/new", methods=["POST"])
 @login_required
 def ops_payment_new():
     pid = ops.next_id("PAY", "payments", "payment_id")
+    amount = float(request.form.get("amount", 0) or 0)
+    amount_usd = float(request.form.get("amount_usd", 0) or 0)
+    currency = (request.form.get("currency") or "USD").strip().upper()
+    direction = (request.form.get("direction") or "IN").strip().upper()
+    account = (request.form.get("account") or "").strip()
+    pay_type = request.form.get("pay_type") or "Order Payment"
+    if amount_usd <= 0 or (currency != "USD" and abs(amount_usd - amount) < 0.0001):
+        amount_usd = ops.to_usd(amount, currency)
+    elif currency == "USD":
+        amount_usd = amount if amount_usd <= 0 else amount_usd
+    notes = (request.form.get("notes") or "").strip()
+    if account:
+        notes = (notes + f" · account={account}").strip(" ·")
     ops.insert("payments", {
         "payment_id": pid,
         "pay_date": request.form.get("pay_date") or datetime.now().strftime("%Y-%m-%d"),
         "order_id": form_order_id(),
         "client_id": request.form.get("client_id", ""),
-        "pay_type": request.form.get("pay_type", "Order Payment"),
-        "direction": request.form.get("direction", "IN"),
-        "currency": request.form.get("currency", "USD"),
-        "amount": float(request.form.get("amount", 0) or 0),
-        "amount_usd": float(request.form.get("amount_usd", 0) or 0),
+        "pay_type": pay_type,
+        "direction": direction,
+        "currency": currency,
+        "amount": amount,
+        "amount_usd": amount_usd,
         "method": request.form.get("method", "Bank Transfer"),
         "reference": request.form.get("reference", ""),
         "bank_channel": request.form.get("bank_channel", ""),
         "recorded_by": session.get("username", "Finance"),
-        "notes": request.form.get("notes", ""),
+        "notes": notes,
     })
-    flash(f"Payment {pid} recorded.", "success")
+    # Update cash/MoMo/bank when account selected
+    if account and amount:
+        delta = amount if direction == "IN" else -amount
+        adjust_wallet(account, delta, currency)
+        flash(
+            f"Payment {pid} recorded ({direction}). "
+            f"{'Credited' if direction=='IN' else 'Deducted'} {currency} {amount:.2f} "
+            f"from {account} (≈ ${amount_usd:,.2f} USD).",
+            "success",
+        )
+    else:
+        flash(f"Payment {pid} recorded. Select an account next time to update Cash/MoMo/Bank.", "success")
     return redirect(url_for("ops_payments"))
 
 
@@ -2686,6 +2712,8 @@ def ops_expenses():
         users=users,
         accounts=ACCOUNT_OPTIONS,
         wallets=ra.get("wallets") or {},
+        orders=ops.order_list()[:200],
+        clients=ops.client_list(),
         company=COMPANY,
         user=session,
     )

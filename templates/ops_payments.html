@@ -1,6 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Payments – WaveTies{% endblock %}
 {% block content %}
+<div class="page-header"><div class="card soft-card" style="margin-bottom:1rem;padding:0.85rem 1rem;">
+  <b>Client money in → manufacturer money out</b><br>
+  <span style="color:var(--muted);font-size:0.88rem;">
+    After a client pays you, record <b>Supplier Payment</b> with direction <b>OUT</b>, link the order,
+    and choose <b>Mobile Money / Bank</b> so balances update. You can also use <a href="{{ url_for('ops_expenses') }}">Expenses</a>
+    with category <b>Supplier / Manufacturer Payment</b> or <b>BFM Goods Purchase</b>.
+  </span>
+</div>
 <div class="page-header"><h1>Payment Register</h1></div>
 
 <div class="stats-grid">
@@ -34,10 +42,26 @@
     </div>
     <div class="form-row">
       <div class="form-group"><label>Type</label>
-        <select name="pay_type">{% for t in pay_types %}<option>{{ t }}</option>{% endfor %}</select>
+        <select name="pay_type" id="payType">
+          {% for t in pay_types %}
+          <option value="{{ t }}" {% if t == 'Supplier Payment' %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
       </div>
       <div class="form-group"><label>Direction</label>
-        <select name="direction"><option>IN</option><option>OUT</option></select>
+        <select name="direction" id="payDir">
+          <option value="IN">IN (from client)</option>
+          <option value="OUT" selected>OUT (to supplier / manufacturer)</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Pay from / into account</label>
+        <select name="account">
+          <option value="">— optional —</option>
+          {% for key, label in accounts %}
+          <option value="{{ key }}">{{ label }}{% if wallets.get(key) %} — {{ wallets[key].currency }} {{ '%.2f'|format(wallets[key].balance or 0) }}{% endif %}</option>
+          {% endfor %}
+        </select>
+        <small style="color:var(--muted);font-size:0.75rem;">OUT + account deducts MoMo/Cash/Bank. Use Supplier Payment for factory pays.</small>
       </div>
       <div class="form-group"><label>Currency *</label>
         <select name="currency" id="payCurrency" required>

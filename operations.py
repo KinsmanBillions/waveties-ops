@@ -493,6 +493,13 @@ def recalc_usd_amounts():
 
 # ── Expenses ──────────────────────────────────────────────────
 EXPENSE_CATEGORIES = [
+    # Client purchasing / BFM (pay manufacturers & suppliers)
+    "Supplier / Manufacturer Payment",
+    "BFM Goods Purchase",
+    "Factory / China Supplier",
+    "Sourcing Agent Fee",
+    "Sample Purchase",
+    # Operating expenses
     "Salaries & Wages",
     "Office Rent",
     "Utilities",
