@@ -1,24 +1,42 @@
 {% extends "base.html" %}
 {% block title %}Payments – WaveTies{% endblock %}
 {% block content %}
-<div class="page-header"><div class="card soft-card" style="margin-bottom:1rem;padding:0.85rem 1rem;">
-  <b>Client money in → manufacturer money out</b><br>
-  <span style="color:var(--muted);font-size:0.88rem;">
-    After a client pays you, record <b>Supplier Payment</b> with direction <b>OUT</b>, link the order,
-    and choose <b>Mobile Money / Bank</b> so balances update. You can also use <a href="{{ url_for('ops_expenses') }}">Expenses</a>
+<div class="page-header">
+  <div>
+    <h1 style="margin:0;">Payment Register</h1>
+    <p class="page-sub">Client money in, manufacturer money out — link orders and wallets.</p>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:1rem;padding:0.9rem 1.1rem;background:linear-gradient(135deg,#f8fafc,#eef6fb);border:1px solid var(--border);">
+  <b>How to use</b>
+  <p style="color:var(--muted);font-size:0.88rem;margin:0.35rem 0 0;line-height:1.45;">
+    After a client pays you, record a <b>Supplier Payment</b> with direction <b>OUT</b>, link the order,
+    and choose <b>Mobile Money / Bank</b> so balances update.
+    You can also use <a href="{{ url_for('ops_expenses') }}">Expenses</a>
     with category <b>Supplier / Manufacturer Payment</b> or <b>BFM Goods Purchase</b>.
-  </span>
+  </p>
 </div>
-<div class="page-header"><h1>Payment Register</h1></div>
 
-<div class="stats-grid">
-  <div class="stat-card"><div class="label">Total In (USD equiv.)</div><div class="value">${{ "%.2f"|format(kpis.total_in) }}</div></div>
-  <div class="stat-card"><div class="label">Total Out (USD equiv.)</div><div class="value">${{ "%.2f"|format(kpis.total_out) }}</div></div>
-  <div class="stat-card"><div class="label">Net (USD equiv.)</div><div class="value">${{ "%.2f"|format(kpis.net) }}</div></div>
+<div class="stats-grid" style="margin-bottom:1.25rem;">
+  <div class="stat-card">
+    <div class="label">Total In (USD equiv.)</div>
+    <div class="value">${{ "%.2f"|format(kpis.total_in if kpis else 0) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Total Out (USD equiv.)</div>
+    <div class="value">${{ "%.2f"|format(kpis.total_out if kpis else 0) }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Net (USD equiv.)</div>
+    <div class="value">${{ "%.2f"|format(kpis.net if kpis else 0) }}</div>
+  </div>
 </div>
-<p style="color:var(--muted);font-size:0.82rem;margin:-0.5rem 0 1rem;">KPI totals use the <b>Amount (USD)</b> field on each payment. Record the local currency amount and its USD equivalent for international tracking.</p>
+<p style="color:var(--muted);font-size:0.82rem;margin:-0.5rem 0 1rem;">
+  KPI totals use the <b>Amount (USD)</b> field. Record local currency and USD equivalent for international tracking.
+</p>
 
-<div class="card">
+<div class="card" style="margin-bottom:1.25rem;">
   <div class="card-title">Record Payment</div>
   <form method="post" action="{{ url_for('ops_payment_new') }}" id="payForm">
     <div class="form-row">
@@ -50,19 +68,25 @@
       </div>
       <div class="form-group"><label>Direction</label>
         <select name="direction" id="payDir">
-          <option value="IN">IN (from client)</option>
+          <option value="IN">IN (from client / owner)</option>
           <option value="OUT" selected>OUT (to supplier / manufacturer)</option>
         </select>
       </div>
       <div class="form-group"><label>Pay from / into account</label>
         <select name="account">
           <option value="">— optional —</option>
+          {% if accounts %}
           {% for key, label in accounts %}
-          <option value="{{ key }}">{{ label }}{% if wallets.get(key) %} — {{ wallets[key].currency }} {{ '%.2f'|format(wallets[key].balance or 0) }}{% endif %}</option>
+          <option value="{{ key }}">{{ label }}{% if wallets and wallets.get(key) %} — {{ wallets[key].currency }} {{ '%.2f'|format(wallets[key].balance or 0) }}{% endif %}</option>
           {% endfor %}
+          {% endif %}
         </select>
-        <small style="color:var(--muted);font-size:0.75rem;">OUT + account deducts MoMo/Cash/Bank. Use Supplier Payment for factory pays.</small>
+        <small style="color:var(--muted);font-size:0.75rem;display:block;margin-top:0.25rem;">
+          OUT + account deducts MoMo/Cash/Bank. Use Supplier Payment for factory pays.
+        </small>
       </div>
+    </div>
+    <div class="form-row">
       <div class="form-group"><label>Currency *</label>
         <select name="currency" id="payCurrency" required>
           {% for c in currencies %}
@@ -70,8 +94,6 @@
           {% endfor %}
         </select>
       </div>
-    </div>
-    <div class="form-row">
       <div class="form-group"><label>Amount (in selected currency) *</label>
         <input type="number" step="0.01" name="amount" id="payAmount" value="0" required>
       </div>
