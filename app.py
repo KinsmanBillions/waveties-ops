@@ -2102,23 +2102,26 @@ def ops_client_new():
     if not company:
         flash("Company name is required.", "danger")
         return redirect(url_for("ops_clients"))
-    cid = ops.next_id("C", "clients", "client_id")
-    ops.insert("clients", {
-        "client_id": cid,
-        "date_registered": datetime.now().strftime("%Y-%m-%d"),
-        "company_name": company,
-        "contact_person": request.form.get("contact_person", ""),
-        "phone": request.form.get("phone", ""),
-        "email": request.form.get("email", ""),
-        "country": request.form.get("country", ""),
-        "city": request.form.get("city", ""),
-        "client_type": request.form.get("client_type", "Importer"),
-        "preferred_currency": request.form.get("preferred_currency", "USD"),
-        "credit_terms": int(request.form.get("credit_terms", 0) or 0),
-        "status": "Active",
-        "notes": request.form.get("notes", ""),
-    })
-    flash(f"Client {cid} registered.", "success")
+    try:
+        cid = ops.next_id("C", "clients", "client_id")
+        ops.insert("clients", {
+            "client_id": cid,
+            "date_registered": datetime.now().strftime("%Y-%m-%d"),
+            "company_name": company,
+            "contact_person": request.form.get("contact_person", ""),
+            "phone": request.form.get("phone", ""),
+            "email": request.form.get("email", ""),
+            "country": request.form.get("country", ""),
+            "city": request.form.get("city", ""),
+            "client_type": request.form.get("client_type", "Importer"),
+            "preferred_currency": request.form.get("preferred_currency", "USD"),
+            "credit_terms": int(request.form.get("credit_terms", 0) or 0),
+            "status": "Active",
+            "notes": request.form.get("notes", ""),
+        })
+        flash(f"Client {cid} registered.", "success")
+    except Exception as e:
+        flash(f"Could not create client: {e}", "danger")
     return redirect(url_for("ops_clients"))
 
 

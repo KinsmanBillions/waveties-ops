@@ -251,19 +251,35 @@ def _seed(c):
 
 
 def next_id(prefix, table, id_col):
+    """Generate next ID. Parses trailing digits so WT-C001 / WT-ORD-2026-001 both work."""
+    import re
     with get_conn() as conn:
         rows = conn.execute(f"SELECT {id_col} FROM {table}").fetchall()
         nums = []
         for r in rows:
-            try:
-                nums.append(int(r[0].split("-")[-1]))
-            except Exception:
-                pass
+            s = str(r[0] or "")
+            m = re.search(r"(\d+)$", s)
+            if m:
+                try:
+                    nums.append(int(m.group(1)))
+                except Exception:
+                    pass
         n = max(nums) + 1 if nums else 1
         year = datetime.now().strftime("%Y")
         if prefix in ("ORD", "PAY", "SHP", "RMB", "SRC"):
-            return f"WT-{prefix}-{year}-{n:03d}"
-        return f"WT-{prefix}{n:03d}"
+            candidate = f"WT-{prefix}-{year}-{n:03d}"
+        else:
+            # Clients etc.: WT-C001, WT-C002, …
+            candidate = f"WT-{prefix}{n:03d}"
+        # Guarantee uniqueness if gaps/formats mixed
+        existing = {str(r[0]) for r in rows}
+        while candidate in existing:
+            n += 1
+            if prefix in ("ORD", "PAY", "SHP", "RMB", "SRC"):
+                candidate = f"WT-{prefix}-{year}-{n:03d}"
+            else:
+                candidate = f"WT-{prefix}{n:03d}"
+        return candidate
 
 
 def get_all(table, order_by=None):
