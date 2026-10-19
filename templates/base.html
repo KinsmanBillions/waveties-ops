@@ -527,6 +527,7 @@
         <button type="button" class="nav-dropdown-toggle" aria-haspopup="true">Admin ▾</button>
         <div class="nav-dropdown-menu">
           <a href="{{ url_for('admin_treasury') }}">Accounts</a>
+          <a href="{{ url_for('admin_fx_rates') }}">FX Rates</a>
           {% if r == 'admin' %}
           <a href="{{ url_for('admin_users') }}">Users &amp; Roles</a>
           <a href="{{ url_for('admin_smtp') }}">Email Setup</a>

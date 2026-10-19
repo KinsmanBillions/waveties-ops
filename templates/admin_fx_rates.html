@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}Exchange Rates – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;">
+  <div>
+    <h1 style="margin:0;">Live exchange rates</h1>
+    <p class="page-sub">Enter how many units of each currency equal <b>1 USD</b>. Used for income, expenses, invoice payments, and reports.</p>
+  </div>
+  <a href="{{ url_for('admin_treasury') }}" class="btn btn-outline">Accounts</a>
+</div>
+
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-title">How it works</div>
+  <p style="color:var(--muted);font-size:0.9rem;margin:0;">
+    Example: if <b>1 USD = 15.50 GHS</b>, enter <b>15.50</b> for GHS.
+    A payment of <b>GHS 15,500</b> is stored as <b>$1,000.00</b> USD for reports.
+    Wallet balances (Cash / MoMo / Bank) stay in the currency you received — usually GHS.
+  </p>
+  {% if examples %}
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:0.85rem;">
+    {% for ex in examples %}
+    <div style="background:#F1F5F9;border-radius:10px;padding:0.6rem 0.9rem;">
+      <div style="font-size:0.72rem;color:var(--muted);text-transform:uppercase;">{{ ex.label }}</div>
+      <div style="font-weight:700;font-size:1.05rem;">{{ ex.value }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <form method="POST">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Rates as of (date)</label>
+        <input type="date" name="as_of" value="{{ as_of }}" required>
+      </div>
+    </div>
+    <div class="form-row">
+      {% for cur in main_curs %}
+      <div class="form-group">
+        <label>{{ cur }} per 1 USD</label>
+        <input type="number" step="0.0001" min="0" name="rate_{{ cur }}" value="{{ '%.4f'|format(rates.get(cur, 0) or 0) }}" required>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Add another currency (code)</label>
+        <input name="extra_currency" placeholder="e.g. XOF" maxlength="6">
+      </div>
+      <div class="form-group">
+        <label>Rate (per 1 USD)</label>
+        <input type="number" step="0.0001" min="0" name="extra_rate" placeholder="0.00">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="check-label" style="display:flex;align-items:center;gap:0.4rem;">
+        <input type="checkbox" name="recalc_usd" value="1" checked>
+        Recalculate USD on all existing income &amp; expense records using these rates
+      </label>
+    </div>
+    <button type="submit" class="btn btn-primary">Save rates</button>
+  </form>
+</div>
+
+{% if rates %}
+<div class="card" style="margin-top:1rem;">
+  <div class="card-title">All saved rates</div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Currency</th><th>Units per 1 USD</th><th>USD value of 1 unit</th></tr></thead>
+    <tbody>
+      {% for cur, rate in rates.items()|sort %}
+      <tr>
+        <td><b>{{ cur }}</b></td>
+        <td>{{ '%.4f'|format(rate) }}</td>
+        <td>${{ '%.6f'|format(1.0 / rate if rate else 0) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -376,6 +376,109 @@ def set_rmb_rate_for(currency, rate):
         set_setting("rmb_rate", str(rate))
 
 
+
+
+# ── Live FX rates (units of currency per 1 USD) ───────────────
+# Example: GHS 15.50 means 15.50 cedis = 1 USD
+DEFAULT_FX = {
+    "USD": 1.0,
+    "GHS": 15.50,
+    "CNY": 7.25,
+    "EUR": 0.92,
+    "GBP": 0.79,
+    "NGN": 1600.0,
+    "KES": 130.0,
+    "ZAR": 18.0,
+    "AED": 3.67,
+}
+
+
+def get_fx_rates():
+    """Return dict currency -> units per 1 USD."""
+    import json
+    raw = get_setting("fx_rates_json", "")
+    rates = dict(DEFAULT_FX)
+    if raw:
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    try:
+                        rates[str(k).upper()] = float(v)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    rates["USD"] = 1.0
+    return rates
+
+
+def set_fx_rates(rates: dict, as_of=None):
+    import json
+    from datetime import datetime as _dt
+    clean = {}
+    for k, v in (rates or {}).items():
+        try:
+            clean[str(k).upper()] = float(v)
+        except Exception:
+            continue
+    clean["USD"] = 1.0
+    set_setting("fx_rates_json", json.dumps(clean))
+    set_setting("fx_rates_as_of", as_of or _dt.now().strftime("%Y-%m-%d"))
+    return clean
+
+
+def get_fx_as_of():
+    return get_setting("fx_rates_as_of", "") or ""
+
+
+def to_usd(amount, currency):
+    """Convert amount in given currency to USD using live rates."""
+    try:
+        amt = float(amount or 0)
+    except Exception:
+        amt = 0.0
+    cur = (currency or "USD").strip().upper() or "USD"
+    if cur == "USD":
+        return round(amt, 2)
+    rates = get_fx_rates()
+    rate = float(rates.get(cur) or 0)
+    if rate <= 0:
+        # no rate — do not pretend 1:1
+        return 0.0
+    return round(amt / rate, 2)
+
+
+def from_usd(amount_usd, currency):
+    try:
+        amt = float(amount_usd or 0)
+    except Exception:
+        amt = 0.0
+    cur = (currency or "USD").strip().upper() or "USD"
+    if cur == "USD":
+        return round(amt, 2)
+    rates = get_fx_rates()
+    rate = float(rates.get(cur) or 0)
+    if rate <= 0:
+        return 0.0
+    return round(amt * rate, 2)
+
+
+def recalc_usd_amounts():
+    """Recompute amount_usd for all incomes and expenses from live rates."""
+    n_i = n_e = 0
+    with get_conn() as conn:
+        for row in conn.execute("SELECT income_id, amount, currency FROM incomes").fetchall():
+            usd = to_usd(row["amount"], row["currency"])
+            conn.execute("UPDATE incomes SET amount_usd=? WHERE income_id=?", (usd, row["income_id"]))
+            n_i += 1
+        for row in conn.execute("SELECT expense_id, amount, currency FROM expenses").fetchall():
+            usd = to_usd(row["amount"], row["currency"])
+            conn.execute("UPDATE expenses SET amount_usd=? WHERE expense_id=?", (usd, row["expense_id"]))
+            n_e += 1
+    return n_i, n_e
+
+
 # ── Expenses ──────────────────────────────────────────────────
 EXPENSE_CATEGORIES = [
     "Salaries & Wages",

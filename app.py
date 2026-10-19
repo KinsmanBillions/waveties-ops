@@ -675,6 +675,8 @@ def dashboard():
         pnl=pnl,
         exp_month=month,
         wallets=wallets,
+        fx_rates=ops.get_fx_rates(),
+        fx_as_of=ops.get_fx_as_of(),
         company=COMPANY,
         user=session,
     )
@@ -1158,12 +1160,15 @@ def mark_paid(invoice_no):
             inv["paid"] = round(inv.get("paid", 0) + amount, 2)
             inv["balance_due"] = round(max(0, inv.get("total", 0) - inv["paid"]), 2)
             inv.setdefault("payments", [])
+            pay_currency = (inv.get("currency") or "GHS").upper()
             payment_entry = {
                 "amount": amount,
+                "amount_usd": ops.to_usd(amount, pay_currency),
                 "note": note,
                 "account": account,
                 "method": method,
-                "currency": inv.get("currency") or "GHS",
+                "currency": pay_currency,
+                "fx_rate": ops.get_fx_rates().get(pay_currency),
                 "by": session.get("username"),
                 "at": datetime.now().isoformat(timespec="seconds"),
             }
@@ -1177,9 +1182,10 @@ def mark_paid(invoice_no):
             # Also record under Income so Financial Report / net includes this payment
             try:
                 currency = (inv.get("currency") or "GHS").upper()
-                amount_usd = amount if currency == "USD" else amount  # store same; user can adjust later
-                # Prefer USD equivalent if invoice currency is USD; otherwise keep amount as amount_usd
-                # for reporting consistency (same pattern as manual income entry)
+                # Convert to USD using live FX rates (GHS payment ≠ same number in USD)
+                amount_usd = ops.to_usd(amount, currency)
+                rates = ops.get_fx_rates()
+                rate_used = rates.get(currency, 1)
                 iid = ops.add_income({
                     "income_date": datetime.now().strftime("%Y-%m-%d"),
                     "category": "Invoice Payment",
@@ -1211,11 +1217,18 @@ def mark_paid(invoice_no):
             generate_invoice(inv, str(OUTPUT_DIR / f"Invoice_{safe_name}.pdf"))
 
             acc_label = dict(ACCOUNT_OPTIONS).get(account, account)
+            usd_note = ""
+            try:
+                usd_v = ops.to_usd(amount, inv.get("currency") or "GHS")
+                if (inv.get("currency") or "").upper() != "USD":
+                    usd_note = f" (≈ ${usd_v:,.2f} USD)"
+            except Exception:
+                pass
             if inv["balance_due"] <= 0:
-                flash(f"Invoice {invoice_no} fully paid. Credited to {acc_label}.", "success")
+                flash(f"Invoice {invoice_no} fully paid. Credited to {acc_label}{usd_note}.", "success")
             else:
                 flash(
-                    f"Payment of {inv.get('currency','GHS')} {amount:.2f} recorded to {acc_label}. "
+                    f"Payment of {inv.get('currency','GHS')} {amount:.2f}{usd_note} recorded to {acc_label}. "
                     f"Balance due: {inv['balance_due']:.2f}",
                     "success",
                 )
@@ -1650,6 +1663,64 @@ def admin_rebuild_wallets():
         "success",
     )
     return redirect(url_for("admin_treasury"))
+
+
+
+@app.route("/admin/rates", methods=["GET", "POST"])
+@login_required
+@admin_required
+def admin_fx_rates():
+    """Live exchange rates: units of each currency per 1 USD."""
+    main_curs = ["GHS", "CNY", "EUR", "GBP", "NGN", "KES", "ZAR", "AED", "USD"]
+    if request.method == "POST":
+        rates = ops.get_fx_rates()
+        for cur in main_curs:
+            if cur == "USD":
+                continue
+            raw = request.form.get(f"rate_{cur}", "").strip()
+            if raw == "":
+                continue
+            try:
+                rates[cur] = float(raw)
+            except Exception:
+                flash(f"Invalid rate for {cur}.", "danger")
+                return redirect(url_for("admin_fx_rates"))
+        # extra custom pair
+        extra_cur = (request.form.get("extra_currency") or "").strip().upper()
+        extra_rate = (request.form.get("extra_rate") or "").strip()
+        if extra_cur and extra_rate:
+            try:
+                rates[extra_cur] = float(extra_rate)
+            except Exception:
+                flash(f"Invalid rate for {extra_cur}.", "danger")
+                return redirect(url_for("admin_fx_rates"))
+        as_of = (request.form.get("as_of") or datetime.now().strftime("%Y-%m-%d")).strip()
+        ops.set_fx_rates(rates, as_of=as_of)
+        recalc = request.form.get("recalc_usd") in ("1", "on", "yes")
+        msg = f"Exchange rates saved for {as_of}."
+        if recalc:
+            ni, ne = ops.recalc_usd_amounts()
+            msg += f" Recalculated USD on {ni} income(s) and {ne} expense(s)."
+        flash(msg, "success")
+        return redirect(url_for("admin_fx_rates"))
+    rates = ops.get_fx_rates()
+    as_of = ops.get_fx_as_of() or datetime.now().strftime("%Y-%m-%d")
+    # example conversions
+    examples = []
+    ghs_rate = float(rates.get("GHS") or 0)
+    if ghs_rate > 0:
+        examples.append({"label": "GHS 1,000 → USD", "value": f"${ops.to_usd(1000, 'GHS'):,.2f}"})
+        examples.append({"label": "USD 100 → GHS", "value": f"GHS {ops.from_usd(100, 'GHS'):,.2f}"})
+    return render_template(
+        "admin_fx_rates.html",
+        rates=rates,
+        as_of=as_of,
+        main_curs=[c for c in main_curs if c != "USD"],
+        examples=examples,
+        company=COMPANY,
+        user=session,
+    )
+
 
 @app.route("/admin/accounts", methods=["GET", "POST"])
 @login_required
@@ -2543,8 +2614,11 @@ def ops_expenses():
             amount = float(request.form.get("amount", 0) or 0)
             amount_usd = float(request.form.get("amount_usd", 0) or 0)
             currency = (request.form.get("currency") or "GHS").strip().upper()
-            if currency == "USD" and amount_usd <= 0:
-                amount_usd = amount
+            # Live FX: never treat GHS amount as USD 1:1
+            if amount_usd <= 0 or (currency != "USD" and abs(amount_usd - amount) < 0.0001):
+                amount_usd = ops.to_usd(amount, currency)
+            elif currency == "USD":
+                amount_usd = amount if amount_usd <= 0 else amount_usd
             account = (request.form.get("account") or "").strip()
             status = request.form.get("status") or "Paid"
             eid = ops.add_expense({
@@ -2712,8 +2786,10 @@ def ops_incomes():
             amount = float(request.form.get("amount", 0) or 0)
             amount_usd = float(request.form.get("amount_usd", 0) or 0)
             currency = (request.form.get("currency") or "GHS").strip().upper()
-            if currency == "USD" and amount_usd <= 0:
-                amount_usd = amount
+            if amount_usd <= 0 or (currency != "USD" and abs(amount_usd - amount) < 0.0001):
+                amount_usd = ops.to_usd(amount, currency)
+            elif currency == "USD":
+                amount_usd = amount if amount_usd <= 0 else amount_usd
             account = (request.form.get("account") or "").strip()
             status = request.form.get("status") or "Received"
             iid = ops.add_income({

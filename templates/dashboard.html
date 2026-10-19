@@ -96,13 +96,20 @@
   </div>
   {% if wallets %}
   <div class="wallet-strip">
-    <div class="wallet-strip-title">Account balances</div>
+    <div class="wallet-strip-title">Account balances{% if fx_as_of %} · FX as of {{ fx_as_of }}{% endif %}</div>
     <div class="wallet-pills">
       {% for key in ['cash','momo','bank'] %}
       {% set w = wallets.get(key, {}) %}
+      {% set cur = w.currency or 'GHS' %}
+      {% set bal = w.balance or 0 %}
+      {% set rate = (fx_rates or {}).get(cur, 0) if fx_rates is defined else 0 %}
+      {% set usd_eq = (bal / rate) if rate and rate > 0 and cur != 'USD' else (bal if cur == 'USD' else 0) %}
       <div class="wallet-pill">
         <span class="wp-label">{{ w.label or key }}</span>
-        <span class="wp-value">{{ w.currency or 'GHS' }} {{ '%.2f'|format(w.balance or 0) }}</span>
+        <span class="wp-value">{{ cur }} {{ '%.2f'|format(bal) }}</span>
+        {% if cur != 'USD' and rate %}
+        <span class="wp-usd">≈ ${{ '%.2f'|format(usd_eq) }}</span>
+        {% endif %}
       </div>
       {% endfor %}
     </div>
@@ -251,6 +258,7 @@
 }
 .wp-label { color: rgba(255,255,255,0.7); }
 .wp-value { font-weight: 700; color: #fff; }
+.wp-usd { font-size: 0.72rem; color: rgba(255,255,255,0.65); margin-left: 0.25rem; }
 .pill {
   display: inline-block; background: #E8F4FC; color: #0077B6;
   font-size: 0.72rem; font-weight: 600; padding: 0.15rem 0.5rem; border-radius: 999px;
