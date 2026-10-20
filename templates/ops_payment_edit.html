@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ payment.payment_id }} – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 style="margin:0;">Edit payment</h1>
+    <p class="page-sub">{{ payment.payment_id }}</p>
+  </div>
+  <a href="{{ url_for('ops_payments') }}" class="btn btn-outline">← Payments</a>
+</div>
+
+<div class="card">
+  <form method="post">
+    <div class="form-row">
+      <div class="form-group"><label>Order ID</label>
+        <select name="order_id">
+          <option value="">— select —</option>
+          {% for o in orders %}
+          <option value="{{ o.order_id }}" {% if o.order_id == payment.order_id %}selected{% endif %}>{{ o.order_id }}</option>
+          {% endfor %}
+        </select>
+        <input type="text" name="order_id_manual" value="{{ payment.order_id or '' }}" placeholder="Or type Order ID" style="margin-top:0.35rem;">
+      </div>
+      <div class="form-group"><label>Client</label>
+        <select name="client_id">
+          <option value="">— optional —</option>
+          {% for c in clients %}
+          <option value="{{ c.client_id }}" {% if c.client_id == payment.client_id %}selected{% endif %}>{{ c.client_id }} — {{ c.company_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Date</label>
+        <input type="date" name="pay_date" value="{{ payment.pay_date or '' }}">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Type</label>
+        <select name="pay_type">
+          {% for t in pay_types %}
+          <option value="{{ t }}" {% if t == payment.pay_type %}selected{% endif %}>{{ t }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Direction</label>
+        <select name="direction">
+          <option value="IN" {% if payment.direction == 'IN' %}selected{% endif %}>IN (from client / owner)</option>
+          <option value="OUT" {% if payment.direction == 'OUT' %}selected{% endif %}>OUT (to supplier / manufacturer)</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Account</label>
+        <select name="account">
+          <option value="">— select —</option>
+          {% for key, label in accounts %}
+          <option value="{{ key }}" {% if key == payment.account %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Currency</label>
+        <select name="currency" id="payCurrency">
+          {% for c in currencies %}
+          <option value="{{ c }}" {% if c == payment.currency %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Amount</label>
+        <input type="number" step="0.01" name="amount" id="payAmount" value="{{ payment.amount or 0 }}" required>
+      </div>
+      <div class="form-group"><label>Amount USD</label>
+        <input type="number" step="0.01" name="amount_usd" id="payAmountUsd" value="{{ payment.amount_usd or 0 }}" required>
+      </div>
+      <div class="form-group"><label>Method</label>
+        <select name="method">
+          {% for m in pay_methods %}
+          <option value="{{ m }}" {% if m == payment.method %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Reference</label><input name="reference" value="{{ payment.reference or '' }}"></div>
+      <div class="form-group"><label>Bank / Channel</label><input name="bank_channel" value="{{ payment.bank_channel or '' }}"></div>
+      <div class="form-group"><label>Notes</label><input name="notes" value="{{ payment.notes or '' }}"></div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save changes</button>
+    <a href="{{ url_for('ops_payments') }}" class="btn btn-outline">Cancel</a>
+  </form>
+</div>
+{% endblock %}

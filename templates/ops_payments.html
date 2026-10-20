@@ -119,7 +119,7 @@
   <div class="table-wrap">
     <table>
       <thead>
-        <tr><th>ID</th><th>Date</th><th>Order</th><th>Type</th><th>Dir</th><th>Currency</th><th>Amount</th><th>USD</th><th>Method</th><th>Ref</th></tr>
+        <tr><th>ID</th><th>Date</th><th>Order</th><th>Type</th><th>Dir</th><th>Currency</th><th>Amount</th><th>USD</th><th>Method</th><th>Account</th><th>Ref</th><th></th></tr>
       </thead>
       <tbody>
         {% for p in payments %}
@@ -133,10 +133,17 @@
           <td>{{ "%.2f"|format(p.amount or 0) }}</td>
           <td>{{ "%.2f"|format(p.amount_usd or 0) }}</td>
           <td>{{ p.method }}</td>
+          <td>{{ p.account or '—' }}</td>
           <td>{{ p.reference or '—' }}</td>
+          <td style="white-space:nowrap;">
+            <a href="{{ url_for('ops_payment_edit', payment_id=p.payment_id) }}" class="btn btn-sm btn-outline">Edit</a>
+            <form method="post" action="{{ url_for('ops_payment_delete', payment_id=p.payment_id) }}" style="display:inline;" onsubmit="return confirm('Delete payment {{ p.payment_id }}?');">
+              <button type="submit" class="btn btn-sm" style="color:var(--danger);background:transparent;border:1px solid #fecaca;">Delete</button>
+            </form>
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="10" style="text-align:center;color:var(--muted)">No payments yet.</td></tr>
+        <tr><td colspan="12" style="text-align:center;color:var(--muted)">No payments yet.</td></tr>
         {% endfor %}
       </tbody>
     </table>

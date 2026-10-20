@@ -1624,13 +1624,23 @@ def rebuild_wallet_balances():
     except Exception as ex:
         print(f"[WaveTies] rebuild invoice pays: {ex}", flush=True)
 
-    # 4) Ops payment register (Supplier Payment OUT, Owner Capital IN, etc.)
+    # 4) Ops payment register — skip if an expense already references this payment_id
     n_ops = 0
     try:
+        exp_refs = set()
+        try:
+            for e in (ops.list_expenses(limit=5000) if hasattr(ops, "list_expenses") else []):
+                ref = (e.get("reference") or "").strip()
+                if ref:
+                    exp_refs.add(ref)
+        except Exception:
+            pass
         for p in (ops.get_all("payments") or []):
+            pid = (p.get("payment_id") or "").strip()
+            if pid and pid in exp_refs:
+                continue  # already counted as expense
             acc = _acc(p.get("account"))
             if not acc:
-                # fallback: notes may contain account=momo
                 notes = (p.get("notes") or "")
                 if "account=" in notes:
                     acc = _acc(notes.split("account=")[-1].split()[0].strip(" ·,"))
@@ -2466,18 +2476,220 @@ def ops_payment_new():
             ops.update("payments", "payment_id", pid, {"account": account})
         except Exception:
             pass
-    # Update cash/MoMo/bank when account selected
+
+    expense_id = None
+    # Supplier / manufacturer OUT also appears under Expenses (one wallet movement only)
+    if direction == "OUT" and pay_type in (
+        "Supplier Payment", "Fee", "Other"
+    ):
+        try:
+            cat = "Supplier / Manufacturer Payment" if pay_type == "Supplier Payment" else "Miscellaneous"
+            expense_id = ops.add_expense({
+                "expense_date": row["pay_date"],
+                "category": cat,
+                "subcategory": (row.get("order_id") or "").strip(),
+                "description": (request.form.get("notes") or f"{pay_type} {pid}").strip(),
+                "payee": (request.form.get("bank_channel") or request.form.get("reference") or "Supplier").strip(),
+                "worker_username": "",
+                "amount": amount,
+                "currency": currency,
+                "amount_usd": amount_usd,
+                "payment_method": request.form.get("method") or "Other",
+                "reference": pid,  # links expense ↔ payment (avoid double-count on rebuild)
+                "status": "Paid",
+                "recorded_by": session.get("name") or session.get("username") or "Finance",
+                "notes": f"Auto from payment {pid}",
+                "account": account or "",
+            })
+        except Exception as ex:
+            print(f"[WaveTies] auto expense from payment failed: {ex}", flush=True)
+
+    # Update cash/MoMo/bank when account selected (single deduction)
     if account and amount:
         delta = amount if direction == "IN" else -amount
         new_bal = adjust_wallet(account, delta, currency)
-        flash(
+        msg = (
             f"Payment {pid} recorded ({direction}). "
             f"{'Credited' if direction=='IN' else 'Deducted'} {currency} {amount:.2f} "
-            f"on {account}. Balance now {currency} {new_bal if new_bal is not None else '?'}.",
-            "success",
+            f"on {account}. Balance now {currency} {new_bal if new_bal is not None else '?'}."
         )
+        if expense_id:
+            msg += f" Also listed under Expenses as {expense_id}."
+        flash(msg, "success")
     else:
-        flash(f"Payment {pid} recorded (no wallet account selected).", "success")
+        msg = f"Payment {pid} recorded."
+        if expense_id:
+            msg += f" Listed under Expenses as {expense_id}."
+        if direction == "OUT":
+            msg += " Select an account so MoMo/Bank updates."
+        flash(msg, "success" if expense_id else "warning")
+    return redirect(url_for("ops_payments"))
+
+
+
+
+@app.route("/ops/payments/<payment_id>/edit", methods=["GET", "POST"])
+@login_required
+@finance_required
+def ops_payment_edit(payment_id):
+    """Edit a payment; reverse old wallet effect and apply new; sync linked expense."""
+    row = ops.get_one("payments", "payment_id", payment_id)
+    if not row:
+        flash("Payment not found.", "danger")
+        return redirect(url_for("ops_payments"))
+    clients = ops.client_list()
+    orders = ops.order_list()
+    ra = load_receiving_accounts()
+
+    def _acc(val):
+        a = (val or "").strip().lower()
+        if a in ("cash", "momo", "bank"):
+            return a
+        return ""
+
+    if request.method == "POST":
+        try:
+            old_acc = _acc(row.get("account"))
+            try:
+                old_amt = float(row.get("amount") or 0)
+            except Exception:
+                old_amt = 0.0
+            old_dir = (row.get("direction") or "IN").strip().upper()
+
+            amount = float(request.form.get("amount", 0) or 0)
+            amount_usd = float(request.form.get("amount_usd", 0) or 0)
+            currency = (request.form.get("currency") or row.get("currency") or "USD").strip().upper()
+            direction = (request.form.get("direction") or "IN").strip().upper()
+            account = (request.form.get("account") or "").strip()
+            pay_type = request.form.get("pay_type") or row.get("pay_type") or "Other"
+            if direction == "OUT" and not account:
+                flash("Select Pay from account for OUT payments.", "danger")
+                return redirect(url_for("ops_payment_edit", payment_id=payment_id))
+            if amount_usd <= 0 or (currency != "USD" and abs(amount_usd - amount) < 0.0001):
+                amount_usd = ops.to_usd(amount, currency)
+            order_id = (request.form.get("order_id") or request.form.get("order_id_manual") or "").strip()
+
+            data = {
+                "pay_date": request.form.get("pay_date") or row.get("pay_date"),
+                "order_id": order_id,
+                "client_id": request.form.get("client_id") or "",
+                "pay_type": pay_type,
+                "direction": direction,
+                "currency": currency,
+                "amount": amount,
+                "amount_usd": amount_usd,
+                "method": request.form.get("method") or row.get("method") or "",
+                "reference": request.form.get("reference") or "",
+                "bank_channel": request.form.get("bank_channel") or "",
+                "notes": request.form.get("notes") or "",
+                "account": account,
+            }
+            ops.update("payments", "payment_id", payment_id, data)
+
+            # Reverse old wallet, apply new
+            if old_acc and old_amt:
+                # old OUT deducted → reverse is +; old IN credited → reverse is -
+                rev = old_amt if old_dir == "OUT" else -old_amt
+                adjust_wallet(old_acc, rev, row.get("currency"))
+            if account and amount:
+                delta = amount if direction == "IN" else -amount
+                adjust_wallet(account, delta, currency)
+
+            # Sync linked expense (reference = payment_id)
+            try:
+                linked = None
+                for e in (ops.list_expenses(limit=2000) if hasattr(ops, "list_expenses") else []):
+                    if (e.get("reference") or "").strip() == payment_id:
+                        linked = e
+                        break
+                if linked and direction == "OUT":
+                    ops.update("expenses", "expense_id", linked["expense_id"], {
+                        "expense_date": data["pay_date"],
+                        "category": "Supplier / Manufacturer Payment" if pay_type == "Supplier Payment" else (linked.get("category") or "Miscellaneous"),
+                        "subcategory": order_id,
+                        "description": (data["notes"] or linked.get("description") or "").strip(),
+                        "amount": amount,
+                        "currency": currency,
+                        "amount_usd": amount_usd,
+                        "payment_method": data["method"],
+                        "status": "Paid",
+                        "account": account,
+                    })
+                elif linked and direction != "OUT":
+                    # no longer a supplier outlay — leave expense or delete
+                    pass
+                elif not linked and direction == "OUT" and pay_type == "Supplier Payment":
+                    ops.add_expense({
+                        "expense_date": data["pay_date"],
+                        "category": "Supplier / Manufacturer Payment",
+                        "subcategory": order_id,
+                        "description": (data["notes"] or f"Supplier Payment {payment_id}").strip(),
+                        "payee": data.get("bank_channel") or data.get("reference") or "Supplier",
+                        "amount": amount,
+                        "currency": currency,
+                        "amount_usd": amount_usd,
+                        "payment_method": data["method"],
+                        "reference": payment_id,
+                        "status": "Paid",
+                        "recorded_by": session.get("username") or "Finance",
+                        "notes": f"Auto from payment {payment_id}",
+                        "account": account,
+                    })
+            except Exception as ex:
+                print(f"[WaveTies] payment edit expense sync: {ex}", flush=True)
+
+            flash(f"Payment {payment_id} updated.", "success")
+            return redirect(url_for("ops_payments"))
+        except Exception as e:
+            flash(f"Could not update payment: {e}", "danger")
+            return redirect(url_for("ops_payment_edit", payment_id=payment_id))
+
+    return render_template(
+        "ops_payment_edit.html",
+        payment=row,
+        clients=clients,
+        orders=orders,
+        pay_types=PAY_TYPES,
+        pay_methods=PAY_METHODS,
+        currencies=CURRENCIES,
+        accounts=ACCOUNT_OPTIONS,
+        wallets=(ra.get("wallets") or {}),
+        company=COMPANY,
+        user=session,
+    )
+
+
+@app.route("/ops/payments/<payment_id>/delete", methods=["POST"])
+@login_required
+@finance_required
+def ops_payment_delete(payment_id):
+    row = ops.get_one("payments", "payment_id", payment_id)
+    if not row:
+        flash("Payment not found.", "danger")
+        return redirect(url_for("ops_payments"))
+    # reverse wallet
+    acc = (row.get("account") or "").strip().lower()
+    try:
+        amt = float(row.get("amount") or 0)
+    except Exception:
+        amt = 0.0
+    direction = (row.get("direction") or "IN").strip().upper()
+    if acc in ("cash", "momo", "bank") and amt:
+        rev = amt if direction == "OUT" else -amt
+        adjust_wallet(acc, rev, row.get("currency"))
+    # delete linked expense
+    try:
+        for e in (ops.list_expenses(limit=2000) if hasattr(ops, "list_expenses") else []):
+            if (e.get("reference") or "").strip() == payment_id:
+                # reverse expense wallet only if payment had no account (expense owned the wallet)
+                # payment already reversed above if it had account; expense may have same account —
+                # do not reverse expense wallet again if payment had account
+                ops.delete("expenses", "expense_id", e["expense_id"])
+                break
+    except Exception as ex:
+        print(f"[WaveTies] delete linked expense: {ex}", flush=True)
+    ops.delete("payments", "payment_id", payment_id)
+    flash(f"Payment {payment_id} deleted.", "success")
     return redirect(url_for("ops_payments"))
 
 
