@@ -16,33 +16,84 @@
   </div>
 </div>
 
+<div class="section-label">Invoices</div>
 <div class="kpi-grid dash-kpis">
   <div class="kpi-card kpi-accent-cyan">
-    <div class="kpi-label">Total Invoices</div>
-    <div class="kpi-value">{{ stats.total }}</div>
+    <div class="kpi-icon">📄</div>
+    <div class="kpi-body">
+      <div class="kpi-label">Total Invoices</div>
+      <div class="kpi-value">{{ stats.total }}</div>
+    </div>
   </div>
   <div class="kpi-card kpi-accent-amber">
-    <div class="kpi-label">Outstanding</div>
-    <div class="kpi-value">{{ stats.due }}</div>
+    <div class="kpi-icon">⏳</div>
+    <div class="kpi-body">
+      <div class="kpi-label">Outstanding</div>
+      <div class="kpi-value">{{ stats.due }}</div>
+    </div>
   </div>
   <div class="kpi-card kpi-accent-green">
-    <div class="kpi-label">Paid</div>
-    <div class="kpi-value">{{ stats.paid }}</div>
+    <div class="kpi-icon">✓</div>
+    <div class="kpi-body">
+      <div class="kpi-label">Paid</div>
+      <div class="kpi-value">{{ stats.paid }}</div>
+    </div>
   </div>
   <div class="kpi-card kpi-accent-navy">
-    <div class="kpi-label">Total Amount</div>
-    <div class="kpi-value" style="font-size:1.25rem;">GHS {{ '%.2f'|format(stats.total_amount) }}</div>
+    <div class="kpi-icon">₵</div>
+    <div class="kpi-body">
+      <div class="kpi-label">Total Amount</div>
+      <div class="kpi-value kpi-value-sm">GHS {{ '%.2f'|format(stats.total_amount) }}</div>
+    </div>
   </div>
   <div class="kpi-card kpi-accent-red">
-    <div class="kpi-label">Balance Due</div>
-    <div class="kpi-value" style="font-size:1.25rem;">GHS {{ '%.2f'|format(stats.outstanding) }}</div>
+    <div class="kpi-icon">!</div>
+    <div class="kpi-body">
+      <div class="kpi-label">Balance Due</div>
+      <div class="kpi-value kpi-value-sm">GHS {{ '%.2f'|format(stats.outstanding) }}</div>
+    </div>
   </div>
 </div>
 
 <div class="section-label">Operations Snapshot</div>
 <div class="kpi-grid dash-kpis">
-  <div class="kpi-card">
-    <div class="kpi-label">Active Orders</div>
+  <div class="kpi-card kpi-accent-cyan">
+    <div class="kpi-icon">📦</div>
+    <div class="kpi-body">
+      <div class="kpi-label">Active Orders</div>
+      <div class="kpi-value">{{ (ops_stats or {}).get('active_orders', 0) }}</div>
+    </div>
+  </div>
+  <div class="kpi-card kpi-accent-amber">
+    <div class="kpi-icon">💳</div>
+    <div class="kpi-body">
+      <div class="kpi-label">Pending Payments</div>
+      <div class="kpi-value">{{ (ops_stats or {}).get('pending_pay', (ops_stats or {}).get('pending_payments', 0)) }}</div>
+    </div>
+  </div>
+  <div class="kpi-card kpi-accent-navy">
+    <div class="kpi-icon">🚢</div>
+    <div class="kpi-body">
+      <div class="kpi-label">In Transit</div>
+      <div class="kpi-value">{{ (ops_stats or {}).get('in_transit', 0) }}</div>
+    </div>
+  </div>
+  <div class="kpi-card kpi-accent-green">
+    <div class="kpi-icon">$</div>
+    <div class="kpi-body">
+      <div class="kpi-label">Ops Revenue (USD)</div>
+      <div class="kpi-value kpi-value-sm">${{ '%.2f'|format((ops_stats or {}).get('total_rev', (ops_stats or {}).get('revenue_usd', 0)) or 0) }}</div>
+    </div>
+  </div>
+  <div class="kpi-card kpi-accent-cyan">
+    <div class="kpi-icon">👥</div>
+    <div class="kpi-body">
+      <div class="kpi-label">Active Clients</div>
+      <div class="kpi-value">{{ (ops_stats or {}).get('active_clients', 0) }}</div>
+    </div>
+  </div>
+</div>
+
     <div class="kpi-value">{{ (ops_stats or {}).get('active_orders', 0) }}</div>
   </div>
   <div class="kpi-card">
@@ -181,15 +232,86 @@
 </div>
 
 <style>
-.dash-kpis { margin-bottom: 1.25rem; }
+/* Professional KPI grid */
+.kpi-grid, .dash-kpis {
+  display: grid !important;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.85rem;
+  margin-bottom: 1.35rem;
+}
+@media (max-width: 1100px) {
+  .kpi-grid, .dash-kpis { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 700px) {
+  .kpi-grid, .dash-kpis { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 420px) {
+  .kpi-grid, .dash-kpis { grid-template-columns: 1fr; }
+}
+.kpi-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem 1.1rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  box-shadow: 0 2px 10px rgba(10, 37, 64, 0.05);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  min-height: 88px;
+}
+.kpi-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 28px rgba(10, 37, 64, 0.12);
+}
+.kpi-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: #F1F5F9;
+  color: var(--navy);
+}
+.kpi-body { min-width: 0; flex: 1; }
+.kpi-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 0.2rem;
+}
+.kpi-value {
+  font-size: 1.55rem;
+  font-weight: 800;
+  color: var(--navy);
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  word-break: break-word;
+}
+.kpi-value-sm { font-size: 1.15rem; }
 .kpi-accent-cyan { border-top: 3px solid #00B4D8; }
+.kpi-accent-cyan .kpi-icon { background: #E0F7FA; color: #00838F; }
 .kpi-accent-amber { border-top: 3px solid #F59E0B; }
+.kpi-accent-amber .kpi-icon { background: #FEF3C7; color: #B45309; }
 .kpi-accent-green { border-top: 3px solid #10B981; }
+.kpi-accent-green .kpi-icon { background: #D1FAE5; color: #047857; }
 .kpi-accent-navy { border-top: 3px solid #0A2540; }
+.kpi-accent-navy .kpi-icon { background: #E2E8F0; color: #0A2540; }
 .kpi-accent-red { border-top: 3px solid #EF4444; }
+.kpi-accent-red .kpi-icon { background: #FEE2E2; color: #B91C1C; }
 .section-label {
-  font-size: 0.75rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.06em; color: var(--muted); margin: 0.5rem 0 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin: 0.35rem 0 0.7rem;
 }
 .finance-hero {
   background: linear-gradient(135deg, #0A2540 0%, #0d3a5c 55%, #0077B6 100%);

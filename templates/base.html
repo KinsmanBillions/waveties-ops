@@ -289,6 +289,22 @@
     }
     .card-title { font-size: 1rem; font-weight: 600; color: var(--navy); margin-bottom: 0.75rem; }
 
+    
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.85rem;
+      margin-bottom: 1.25rem;
+    }
+    .kpi-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 1rem 1.1rem;
+    }
+    .kpi-label { font-size: 0.75rem; color: var(--muted); font-weight: 600; }
+    .kpi-value { font-size: 1.4rem; font-weight: 700; color: var(--navy); }
+
     /* Stats */
     .stats-grid {
       display: grid;
