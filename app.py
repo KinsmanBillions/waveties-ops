@@ -30,7 +30,8 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from invoice_generator import (
-    generate_invoice, load_db, save_db, create_invoice,
+    generate_invoice, generate_receipt, create_receipt_for_payment,
+    load_db, save_db, create_invoice,
     COMPANY, OUTPUT_DIR
 )
 import operations as ops
@@ -1035,6 +1036,59 @@ def download_pdf(invoice_no):
     return send_file(pdf_path, as_attachment=True, download_name=f"Invoice_{safe_name}.pdf", mimetype="application/pdf")
 
 
+
+@app.route("/invoices/<path:invoice_no>/receipt/<receipt_no>")
+@login_required
+def download_receipt(invoice_no, receipt_no):
+    """Download official payment receipt PDF."""
+    db = load_db()
+    inv = db.get("invoices", {}).get(invoice_no)
+    if not inv:
+        flash("Invoice not found.", "danger")
+        return redirect(url_for("dashboard"))
+    safe = receipt_no.replace("/", "-")
+    pdf_path = OUTPUT_DIR / f"Receipt_{safe}.pdf"
+    if not pdf_path.exists():
+        # try regenerate from stored receipt data or payment
+        try:
+            rdata = (db.get("receipts") or {}).get(receipt_no)
+            if rdata:
+                generate_receipt(rdata, str(pdf_path))
+            else:
+                # find payment with this receipt_no
+                for p in inv.get("payments") or []:
+                    if p.get("receipt_no") == receipt_no:
+                        create_receipt_for_payment(inv, p, invoice_no)
+                        break
+        except Exception as e:
+            flash(f"Receipt not available: {e}", "danger")
+            return redirect(url_for("view_invoice", invoice_no=invoice_no))
+    if not pdf_path.exists():
+        flash("Receipt PDF not found.", "danger")
+        return redirect(url_for("view_invoice", invoice_no=invoice_no))
+    from flask import send_file
+    return send_file(pdf_path, as_attachment=True, download_name=f"Receipt_{safe}.pdf")
+
+
+@app.route("/invoices/<path:invoice_no>/receipts/latest")
+@login_required
+def download_latest_receipt(invoice_no):
+    db = load_db()
+    inv = db.get("invoices", {}).get(invoice_no)
+    if not inv:
+        flash("Invoice not found.", "danger")
+        return redirect(url_for("dashboard"))
+    receipt_no = None
+    for p in reversed(inv.get("payments") or []):
+        if p.get("receipt_no"):
+            receipt_no = p["receipt_no"]
+            break
+    if not receipt_no:
+        flash("No receipt for this invoice yet. Record a payment first.", "warning")
+        return redirect(url_for("view_invoice", invoice_no=invoice_no))
+    return redirect(url_for("download_receipt", invoice_no=invoice_no, receipt_no=receipt_no))
+
+
 @app.route("/invoices/<path:invoice_no>/regenerate")
 @login_required
 def regenerate_pdf(invoice_no):
@@ -1217,9 +1271,18 @@ def mark_paid(invoice_no):
                 # Payment already saved; income is secondary
                 flash(f"Payment saved, but income entry failed: {inc_err}", "warning")
 
-            # Regenerate PDF with updated paid/balance
+            # Regenerate invoice PDF with updated paid/balance
             safe_name = invoice_no.replace("/", "-")
             generate_invoice(inv, str(OUTPUT_DIR / f"Invoice_{safe_name}.pdf"))
+
+            # Official payment receipt for the client
+            receipt_no = None
+            try:
+                receipt_no, rpath = create_receipt_for_payment(inv, payment_entry, invoice_no)
+                # reload inv with receipt_no on payment
+                inv = load_db()["invoices"].get(invoice_no, inv)
+            except Exception as rerr:
+                print(f"[WaveTies] receipt generate failed: {rerr}", flush=True)
 
             acc_label = dict(ACCOUNT_OPTIONS).get(account, account)
             usd_note = ""
@@ -1229,12 +1292,13 @@ def mark_paid(invoice_no):
                     usd_note = f" (≈ ${usd_v:,.2f} USD)"
             except Exception:
                 pass
+            rnote = f" Receipt {receipt_no} ready." if receipt_no else ""
             if inv["balance_due"] <= 0:
-                flash(f"Invoice {invoice_no} fully paid. Credited to {acc_label}{usd_note}.", "success")
+                flash(f"Invoice {invoice_no} fully paid. Credited to {acc_label}{usd_note}.{rnote}", "success")
             else:
                 flash(
                     f"Payment of {inv.get('currency','GHS')} {amount:.2f}{usd_note} recorded to {acc_label}. "
-                    f"Balance due: {inv['balance_due']:.2f}",
+                    f"Balance due: {inv['balance_due']:.2f}.{rnote}",
                     "success",
                 )
             return redirect(url_for("view_invoice", invoice_no=invoice_no))

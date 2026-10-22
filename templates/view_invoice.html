@@ -4,14 +4,22 @@
 <div class="card">
   <div class="card-title">Payment History</div>
   <table>
-    <thead><tr><th>Date</th><th>Amount</th><th>By</th><th>Note</th></tr></thead>
+    <thead><tr><th>Date</th><th>Amount</th><th>Account</th><th>By</th><th>Note</th><th>Receipt</th></tr></thead>
     <tbody>
     {% for p in inv.payments %}
       <tr>
         <td>{{ p.at }}</td>
         <td>{{ inv.currency or 'USD' }} {{ "%.2f"|format(p.amount) }}</td>
+        <td>{{ p.account or '—' }}</td>
         <td>{{ p.by }}</td>
         <td>{{ p.note or '—' }}</td>
+        <td>
+          {% if p.receipt_no %}
+          <a class="btn btn-sm btn-outline" href="{{ url_for('download_receipt', invoice_no=invoice_no, receipt_no=p.receipt_no) }}">Receipt PDF</a>
+          {% else %}
+          —
+          {% endif %}
+        </td>
       </tr>
     {% endfor %}
     </tbody>
@@ -25,7 +33,10 @@
 <div class="page-header">
   <h1>{{ invoice_no }}</h1>
   <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
-    <a href="{{ url_for('download_pdf', invoice_no=invoice_no) }}" class="btn btn-primary">Download PDF</a>
+    <a href="{{ url_for('download_pdf', invoice_no=invoice_no) }}" class="btn btn-primary">Download Invoice PDF</a>
+    {% if inv.payments %}
+    <a href="{{ url_for('download_latest_receipt', invoice_no=invoice_no) }}" class="btn btn-navy">Download Receipt</a>
+    {% endif %}
     {% if (inv.balance_due or 0) > 0 %}
     {% if session.get('role') in ['admin', 'manager', 'accountant'] %}<a href="{{ url_for('mark_paid', invoice_no=invoice_no) }}" class="btn btn-navy">Record Payment</a>{% endif %}
     {% endif %}
@@ -140,14 +151,22 @@
 <div class="card">
   <div class="card-title">Payment History</div>
   <table>
-    <thead><tr><th>Date</th><th>Amount</th><th>By</th><th>Note</th></tr></thead>
+    <thead><tr><th>Date</th><th>Amount</th><th>Account</th><th>By</th><th>Note</th><th>Receipt</th></tr></thead>
     <tbody>
     {% for p in inv.payments %}
       <tr>
         <td>{{ p.at }}</td>
         <td>{{ inv.currency or 'USD' }} {{ "%.2f"|format(p.amount) }}</td>
+        <td>{{ p.account or '—' }}</td>
         <td>{{ p.by }}</td>
         <td>{{ p.note or '—' }}</td>
+        <td>
+          {% if p.receipt_no %}
+          <a class="btn btn-sm btn-outline" href="{{ url_for('download_receipt', invoice_no=invoice_no, receipt_no=p.receipt_no) }}">Receipt PDF</a>
+          {% else %}
+          —
+          {% endif %}
+        </td>
       </tr>
     {% endfor %}
     </tbody>

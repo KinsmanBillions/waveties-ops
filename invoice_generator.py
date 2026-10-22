@@ -467,6 +467,288 @@ def generate_invoice(data: dict, output_path: str):
 
 
 # ──────────────────────────────────────────────────────────────
+
+
+def next_receipt_no(db):
+    now = datetime.now()
+    prefix = f"RCT-{now.strftime('%Y%m')}-"
+    seq = int(db.get("next_receipt_seq") or 1)
+    db["next_receipt_seq"] = seq + 1
+    return f"{prefix}{seq:04d}"
+
+
+def generate_receipt(data: dict, output_path: str):
+    """Official payment receipt PDF — layout similar to professional port receipts.
+
+    Expected keys:
+      receipt_no, receipt_date, method, reference,
+      customer_name, customer_email, customer_phone,
+      invoice_no, currency,
+      amount_received, amount_allocated, amount_unallocated,
+      notes (optional)
+    """
+    styles = create_styles()
+
+    def _add(**kw):
+        try:
+            styles.add(ParagraphStyle(**kw))
+        except Exception:
+            pass
+
+    _add(name="ReceiptTitle", fontName="Helvetica-Bold", fontSize=18,
+         textColor=COMPANY["header_bg"], alignment=TA_RIGHT, leading=22)
+    _add(name="ReceiptMetaLabel", fontName="Helvetica", fontSize=8,
+         textColor=COMPANY["muted"], leading=11)
+    _add(name="ReceiptMetaValue", fontName="Helvetica-Bold", fontSize=9,
+         textColor=COMPANY["text"], leading=12)
+    _add(name="ReceiptFromLabel", fontName="Helvetica", fontSize=8,
+         textColor=COMPANY["muted"], leading=10)
+    _add(name="ReceiptFromName", fontName="Helvetica-Bold", fontSize=11,
+         textColor=COMPANY["text"], leading=14)
+    _add(name="ReceiptAmtLabel", fontName="Helvetica", fontSize=8,
+         textColor=COMPANY["muted"], alignment=TA_CENTER, leading=10)
+    _add(name="ReceiptAmtValue", fontName="Helvetica-Bold", fontSize=14,
+         textColor=COMPANY["text"], alignment=TA_CENTER, leading=18)
+    _add(name="ReceiptAmtGreen", fontName="Helvetica-Bold", fontSize=14,
+         textColor=colors.HexColor("#059669"), alignment=TA_CENTER, leading=18)
+    _add(name="ReceiptAmtOrange", fontName="Helvetica-Bold", fontSize=14,
+         textColor=colors.HexColor("#EA580C"), alignment=TA_CENTER, leading=18)
+    _add(name="ReceiptThanks", fontName="Helvetica-Oblique", fontSize=10,
+         textColor=COMPANY["muted"], alignment=TA_CENTER, leading=14)
+
+    doc = SimpleDocTemplate(
+
+        output_path,
+        pagesize=A4,
+        rightMargin=16*mm,
+        leftMargin=16*mm,
+        topMargin=12*mm,
+        bottomMargin=16*mm,
+    )
+    story = []
+
+    # Top accent bar (orange/cyan like reference)
+    accent = colors.HexColor("#F97316")  # warm orange accent like reference
+    story.append(ColoredBox(178*mm, 2*mm, accent))
+    story.append(Spacer(1, 6*mm))
+
+    # Header: logo + company | PAYMENT RECEIPT
+    logo_path = COMPANY.get("logo_path") or ""
+    left_bits = []
+    if logo_path and Path(logo_path).exists():
+        try:
+            left_bits.append(Image(logo_path, width=28*mm, height=28*mm))
+        except Exception:
+            pass
+    left_bits.append(Spacer(1, 1.5*mm))
+    left_bits.append(Paragraph(COMPANY.get("short_name") or "WaveTies", styles["CompanyName"]))
+    left_bits.append(Paragraph(
+        f'<font size="7" color="#5A6A7A">{COMPANY.get("tagline") or ""}</font>',
+        styles["ReceiptFromLabel"],
+    ))
+
+    right_bits = [
+        Paragraph("PAYMENT RECEIPT", styles["ReceiptTitle"]),
+    ]
+    header = Table([[left_bits, right_bits]], colWidths=[95*mm, 83*mm])
+    header.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(header)
+    story.append(Spacer(1, 8*mm))
+
+    # Received From | meta (receipt no, date, method, ref)
+    currency = data.get("currency") or "GHS"
+    cust_name = data.get("customer_name") or "—"
+    cust_email = data.get("customer_email") or ""
+    cust_phone = data.get("customer_phone") or ""
+    from_lines = [
+        Paragraph("Received From", styles["ReceiptFromLabel"]),
+        Spacer(1, 1*mm),
+        Paragraph(cust_name, styles["ReceiptFromName"]),
+    ]
+    if cust_email:
+        from_lines.append(Paragraph(
+            f'<font size="8" color="#5A6A7A">{cust_email}</font>',
+            styles["ReceiptFromLabel"],
+        ))
+    if cust_phone:
+        from_lines.append(Paragraph(
+            f'<font size="8" color="#5A6A7A">{cust_phone}</font>',
+            styles["ReceiptFromLabel"],
+        ))
+    if data.get("invoice_no"):
+        from_lines.append(Spacer(1, 2*mm))
+        from_lines.append(Paragraph(
+            f'<font size="8" color="#5A6A7A">Invoice: {data.get("invoice_no")}</font>',
+            styles["ReceiptFromLabel"],
+        ))
+
+    meta_rows = [
+        [Paragraph("Receipt No.", styles["ReceiptMetaLabel"]),
+         Paragraph(str(data.get("receipt_no") or "—"), styles["ReceiptMetaValue"])],
+        [Paragraph("Date:", styles["ReceiptMetaLabel"]),
+         Paragraph(str(data.get("receipt_date") or "—"), styles["ReceiptMetaValue"])],
+        [Paragraph("Method:", styles["ReceiptMetaLabel"]),
+         Paragraph(str(data.get("method") or "—"), styles["ReceiptMetaValue"])],
+        [Paragraph("Ref:", styles["ReceiptMetaLabel"]),
+         Paragraph(str(data.get("reference") or "—"), styles["ReceiptMetaValue"])],
+    ]
+    meta_table = Table(meta_rows, colWidths=[28*mm, 50*mm])
+    meta_table.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("LINEBEFORE", (0, 0), (0, -1), 2.5, accent),
+    ]))
+
+    mid = Table([[from_lines, meta_table]], colWidths=[100*mm, 78*mm])
+    mid.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(mid)
+    story.append(Spacer(1, 10*mm))
+
+    # Amount boxes: Total Received | Allocated | Unallocated
+    received = float(data.get("amount_received") or 0)
+    allocated = float(data.get("amount_allocated") or received)
+    unallocated = float(data.get("amount_unallocated") or max(0, received - allocated))
+
+    def amt_cell(label, value, value_style):
+        return [
+            Paragraph(label, styles["ReceiptAmtLabel"]),
+            Spacer(1, 2*mm),
+            Paragraph(f"{currency} {value:,.2f}", styles[value_style]),
+        ]
+
+    boxes = Table([[
+        amt_cell("Total Received", received, "ReceiptAmtValue"),
+        amt_cell("Allocated", allocated, "ReceiptAmtGreen"),
+        amt_cell("Unallocated", unallocated, "ReceiptAmtOrange"),
+    ]], colWidths=[59*mm, 59*mm, 59*mm])
+    boxes.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 10),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+    ]))
+    story.append(boxes)
+    story.append(Spacer(1, 10*mm))
+
+    # Notes
+    notes = (data.get("notes") or "").strip()
+    story.append(Paragraph("Notes", styles["ReceiptFromLabel"]))
+    story.append(Spacer(1, 2*mm))
+    if notes:
+        story.append(Paragraph(notes.replace("\n", "<br/>"), styles["ReceiptMetaValue"]))
+    else:
+        story.append(Spacer(1, 8*mm))
+
+    story.append(Spacer(1, 20*mm))
+    story.append(Paragraph("Thank you for your payment!", styles["ReceiptThanks"]))
+    story.append(Spacer(1, 6*mm))
+    story.append(HRFlowable(
+        width="40%", thickness=0.4, color=colors.HexColor("#CCCCCC"),
+        spaceBefore=2, spaceAfter=3, hAlign="CENTER",
+    ))
+    story.append(Paragraph(
+        f'<font size="7" color="#5A6A7A">{COMPANY.get("name") or ""} · '
+        f'{COMPANY.get("phone") or ""} · {COMPANY.get("email") or ""}</font>',
+        styles["ReceiptThanks"],
+    ))
+
+    doc.build(story)
+    return output_path
+
+
+def create_receipt_for_payment(invoice: dict, payment: dict, invoice_no: str) -> tuple:
+    """Create receipt record + PDF for one invoice payment. Returns (receipt_no, pdf_path)."""
+    db = load_db()
+    receipt_no = next_receipt_no(db)
+    currency = invoice.get("currency") or "GHS"
+    amount = float(payment.get("amount") or 0)
+    # Allocated up to remaining invoice total context
+    total = float(invoice.get("total") or 0)
+    paid = float(invoice.get("paid") or 0)
+    # This payment is fully allocated to the invoice
+    allocated = amount
+    unallocated = 0.0
+
+    method = payment.get("method") or payment.get("account") or "—"
+    if method in ("momo", "cash", "bank"):
+        method = {"momo": "MOBILE_MONEY", "cash": "CASH", "bank": "BANK_TRANSFER"}.get(method, method)
+    method = str(method).upper().replace(" ", "_")
+
+    receipt_date = payment.get("at") or datetime.now().isoformat(timespec="seconds")
+    try:
+        # pretty date
+        if "T" in str(receipt_date):
+            receipt_date = datetime.fromisoformat(str(receipt_date).replace("Z", "")).strftime("%b %d, %Y")
+    except Exception:
+        receipt_date = datetime.now().strftime("%b %d, %Y")
+
+    data = {
+        "receipt_no": receipt_no,
+        "receipt_date": receipt_date,
+        "method": method,
+        "reference": payment.get("note") or payment.get("reference") or invoice_no,
+        "customer_name": invoice.get("customer_name") or "",
+        "customer_email": invoice.get("customer_email") or "",
+        "customer_phone": invoice.get("customer_phone") or "",
+        "invoice_no": invoice_no,
+        "currency": currency,
+        "amount_received": amount,
+        "amount_allocated": allocated,
+        "amount_unallocated": unallocated,
+        "notes": payment.get("note") or "",
+    }
+
+    safe = receipt_no.replace("/", "-")
+    pdf_path = OUTPUT_DIR / f"Receipt_{safe}.pdf"
+    generate_receipt(data, str(pdf_path))
+
+    receipts = db.setdefault("receipts", {})
+    receipts[receipt_no] = {
+        **data,
+        "invoice_no": invoice_no,
+        "pdf": str(pdf_path.name),
+        "created_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    inv = db.get("invoices", {}).get(invoice_no)
+    if inv and inv.get("payments"):
+        # Prefer payment matching same timestamp, else last without receipt_no, else last
+        tagged = False
+        pay_at = payment.get("at")
+        for p in inv["payments"]:
+            if pay_at and p.get("at") == pay_at and not p.get("receipt_no"):
+                p["receipt_no"] = receipt_no
+                tagged = True
+                break
+        if not tagged:
+            for p in reversed(inv["payments"]):
+                if not p.get("receipt_no"):
+                    p["receipt_no"] = receipt_no
+                    tagged = True
+                    break
+        if not tagged:
+            inv["payments"][-1]["receipt_no"] = receipt_no
+        db["invoices"][invoice_no] = inv
+    save_db(db)
+    return receipt_no, pdf_path
+
+
 # JSON store + CLI
 # ──────────────────────────────────────────────────────────────
 try:
