@@ -1073,20 +1073,65 @@ def download_receipt(invoice_no, receipt_no):
 @app.route("/invoices/<path:invoice_no>/receipts/latest")
 @login_required
 def download_latest_receipt(invoice_no):
+    """Download latest receipt; auto-generate from existing payments if needed."""
     db = load_db()
     inv = db.get("invoices", {}).get(invoice_no)
     if not inv:
         flash("Invoice not found.", "danger")
         return redirect(url_for("dashboard"))
+    payments = inv.get("payments") or []
+    if not payments:
+        flash("No payments on this invoice yet. Record a payment first.", "warning")
+        return redirect(url_for("view_invoice", invoice_no=invoice_no))
+
     receipt_no = None
-    for p in reversed(inv.get("payments") or []):
+    for p in reversed(payments):
         if p.get("receipt_no"):
             receipt_no = p["receipt_no"]
             break
+
+    # Back-fill: payment exists but was recorded before receipt feature
     if not receipt_no:
-        flash("No receipt for this invoice yet. Record a payment first.", "warning")
-        return redirect(url_for("view_invoice", invoice_no=invoice_no))
+        try:
+            payment = payments[-1]
+            receipt_no, _path = create_receipt_for_payment(inv, payment, invoice_no)
+            flash(f"Receipt {receipt_no} generated for existing payment.", "success")
+        except Exception as e:
+            flash(f"Could not generate receipt: {e}", "danger")
+            return redirect(url_for("view_invoice", invoice_no=invoice_no))
+
     return redirect(url_for("download_receipt", invoice_no=invoice_no, receipt_no=receipt_no))
+
+
+@app.route("/invoices/<path:invoice_no>/receipts/generate", methods=["POST"])
+@login_required
+def generate_receipt_for_invoice(invoice_no):
+    """Generate receipts for all payments on this invoice that lack one."""
+    db = load_db()
+    inv = db.get("invoices", {}).get(invoice_no)
+    if not inv:
+        flash("Invoice not found.", "danger")
+        return redirect(url_for("dashboard"))
+    payments = inv.get("payments") or []
+    if not payments:
+        flash("No payments to receipt.", "warning")
+        return redirect(url_for("view_invoice", invoice_no=invoice_no))
+    n = 0
+    for p in payments:
+        if p.get("receipt_no"):
+            continue
+        try:
+            create_receipt_for_payment(inv, p, invoice_no)
+            # reload inv after each so payment list stays current
+            inv = load_db().get("invoices", {}).get(invoice_no) or inv
+            n += 1
+        except Exception as e:
+            print(f"[WaveTies] backfill receipt: {e}", flush=True)
+    if n:
+        flash(f"Generated {n} receipt(s) for this invoice.", "success")
+    else:
+        flash("All payments already have receipts.", "success")
+    return redirect(url_for("view_invoice", invoice_no=invoice_no))
 
 
 @app.route("/invoices/<path:invoice_no>/regenerate")

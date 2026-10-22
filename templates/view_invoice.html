@@ -17,7 +17,7 @@
           {% if p.receipt_no %}
           <a class="btn btn-sm btn-outline" href="{{ url_for('download_receipt', invoice_no=invoice_no, receipt_no=p.receipt_no) }}">Receipt PDF</a>
           {% else %}
-          —
+          <span style="color:var(--muted);font-size:0.8rem;">Use Generate Receipt(s)</span>
           {% endif %}
         </td>
       </tr>
@@ -36,6 +36,9 @@
     <a href="{{ url_for('download_pdf', invoice_no=invoice_no) }}" class="btn btn-primary">Download Invoice PDF</a>
     {% if inv.payments %}
     <a href="{{ url_for('download_latest_receipt', invoice_no=invoice_no) }}" class="btn btn-navy">Download Receipt</a>
+    <form method="post" action="{{ url_for('generate_receipt_for_invoice', invoice_no=invoice_no) }}" style="display:inline;">
+      <button type="submit" class="btn btn-outline">Generate Receipt(s)</button>
+    </form>
     {% endif %}
     {% if (inv.balance_due or 0) > 0 %}
     {% if session.get('role') in ['admin', 'manager', 'accountant'] %}<a href="{{ url_for('mark_paid', invoice_no=invoice_no) }}" class="btn btn-navy">Record Payment</a>{% endif %}
@@ -164,7 +167,7 @@
           {% if p.receipt_no %}
           <a class="btn btn-sm btn-outline" href="{{ url_for('download_receipt', invoice_no=invoice_no, receipt_no=p.receipt_no) }}">Receipt PDF</a>
           {% else %}
-          —
+          <span style="color:var(--muted);font-size:0.8rem;">Use Generate Receipt(s)</span>
           {% endif %}
         </td>
       </tr>
