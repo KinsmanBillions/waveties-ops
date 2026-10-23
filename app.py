@@ -1040,7 +1040,7 @@ def download_pdf(invoice_no):
 @app.route("/invoices/<path:invoice_no>/receipt/<receipt_no>")
 @login_required
 def download_receipt(invoice_no, receipt_no):
-    """Download official payment receipt PDF."""
+    """Download official payment receipt PDF — always regenerate so layout updates apply."""
     db = load_db()
     inv = db.get("invoices", {}).get(invoice_no)
     if not inv:
@@ -1048,26 +1048,72 @@ def download_receipt(invoice_no, receipt_no):
         return redirect(url_for("dashboard"))
     safe = receipt_no.replace("/", "-")
     pdf_path = OUTPUT_DIR / f"Receipt_{safe}.pdf"
-    if not pdf_path.exists():
-        # try regenerate from stored receipt data or payment
-        try:
-            rdata = (db.get("receipts") or {}).get(receipt_no)
-            if rdata:
-                generate_receipt(rdata, str(pdf_path))
-            else:
-                # find payment with this receipt_no
-                for p in inv.get("payments") or []:
-                    if p.get("receipt_no") == receipt_no:
-                        create_receipt_for_payment(inv, p, invoice_no)
-                        break
-        except Exception as e:
-            flash(f"Receipt not available: {e}", "danger")
-            return redirect(url_for("view_invoice", invoice_no=invoice_no))
+
+    # Always rebuild from stored receipt data or linked payment
+    try:
+        rdata = (db.get("receipts") or {}).get(receipt_no)
+        if rdata:
+            # Prefer live customer email from invoice
+            rdata = dict(rdata)
+            rdata["customer_name"] = inv.get("customer_name") or rdata.get("customer_name") or ""
+            rdata["customer_email"] = inv.get("customer_email") or rdata.get("customer_email") or ""
+            rdata["customer_phone"] = inv.get("customer_phone") or rdata.get("customer_phone") or ""
+            rdata["invoice_no"] = invoice_no
+            generate_receipt(rdata, str(pdf_path))
+        else:
+            payment = None
+            for p in inv.get("payments") or []:
+                if p.get("receipt_no") == receipt_no:
+                    payment = p
+                    break
+            if payment is None and (inv.get("payments") or []):
+                payment = inv["payments"][-1]
+            if payment is None:
+                flash("No payment found for this receipt.", "danger")
+                return redirect(url_for("view_invoice", invoice_no=invoice_no))
+            # Rebuild receipt data without creating a new receipt number
+            amount = float(payment.get("amount") or 0)
+            method = payment.get("method") or payment.get("account") or "—"
+            if method in ("momo", "cash", "bank"):
+                method = {"momo": "MOBILE_MONEY", "cash": "CASH", "bank": "BANK_TRANSFER"}.get(method, method)
+            method = str(method).upper().replace(" ", "_")
+            receipt_date = payment.get("at") or ""
+            try:
+                if "T" in str(receipt_date):
+                    from datetime import datetime as _dt
+                    receipt_date = _dt.fromisoformat(str(receipt_date).replace("Z", "")).strftime("%b %d, %Y")
+            except Exception:
+                from datetime import datetime as _dt
+                receipt_date = _dt.now().strftime("%b %d, %Y")
+            generate_receipt({
+                "receipt_no": receipt_no,
+                "receipt_date": receipt_date or "—",
+                "method": method,
+                "reference": payment.get("note") or payment.get("reference") or invoice_no,
+                "customer_name": inv.get("customer_name") or "",
+                "customer_email": inv.get("customer_email") or "",
+                "customer_phone": inv.get("customer_phone") or "",
+                "invoice_no": invoice_no,
+                "currency": inv.get("currency") or "GHS",
+                "amount_received": amount,
+                "amount_allocated": amount,
+                "amount_unallocated": 0.0,
+                "notes": payment.get("note") or "",
+            }, str(pdf_path))
+    except Exception as e:
+        flash(f"Receipt not available: {e}", "danger")
+        return redirect(url_for("view_invoice", invoice_no=invoice_no))
+
     if not pdf_path.exists():
         flash("Receipt PDF not found.", "danger")
         return redirect(url_for("view_invoice", invoice_no=invoice_no))
     from flask import send_file
-    return send_file(pdf_path, as_attachment=True, download_name=f"Receipt_{safe}.pdf")
+    return send_file(
+        pdf_path,
+        as_attachment=True,
+        download_name=f"Receipt_{safe}.pdf",
+        mimetype="application/pdf",
+    )
 
 
 @app.route("/invoices/<path:invoice_no>/receipts/latest")
@@ -1117,20 +1163,44 @@ def generate_receipt_for_invoice(invoice_no):
         flash("No payments to receipt.", "warning")
         return redirect(url_for("view_invoice", invoice_no=invoice_no))
     n = 0
+    rebuilt = 0
     for p in payments:
-        if p.get("receipt_no"):
-            continue
         try:
-            create_receipt_for_payment(inv, p, invoice_no)
-            # reload inv after each so payment list stays current
-            inv = load_db().get("invoices", {}).get(invoice_no) or inv
-            n += 1
+            if p.get("receipt_no"):
+                # Rebuild existing receipt PDF with latest layout
+                rno = p["receipt_no"]
+                safe = rno.replace("/", "-")
+                amount = float(p.get("amount") or 0)
+                method = p.get("method") or p.get("account") or "—"
+                if method in ("momo", "cash", "bank"):
+                    method = {"momo": "MOBILE_MONEY", "cash": "CASH", "bank": "BANK_TRANSFER"}.get(method, method)
+                method = str(method).upper().replace(" ", "_")
+                generate_receipt({
+                    "receipt_no": rno,
+                    "receipt_date": (p.get("at") or "")[:10] or "—",
+                    "method": method,
+                    "reference": p.get("note") or p.get("reference") or invoice_no,
+                    "customer_name": inv.get("customer_name") or "",
+                    "customer_email": inv.get("customer_email") or "",
+                    "customer_phone": inv.get("customer_phone") or "",
+                    "invoice_no": invoice_no,
+                    "currency": inv.get("currency") or "GHS",
+                    "amount_received": amount,
+                    "amount_allocated": amount,
+                    "amount_unallocated": 0.0,
+                    "notes": p.get("note") or "",
+                }, str(OUTPUT_DIR / f"Receipt_{safe}.pdf"))
+                rebuilt += 1
+            else:
+                create_receipt_for_payment(inv, p, invoice_no)
+                inv = load_db().get("invoices", {}).get(invoice_no) or inv
+                n += 1
         except Exception as e:
             print(f"[WaveTies] backfill receipt: {e}", flush=True)
-    if n:
-        flash(f"Generated {n} receipt(s) for this invoice.", "success")
+    if n or rebuilt:
+        flash(f"Generated {n} new and rebuilt {rebuilt} receipt(s).", "success")
     else:
-        flash("All payments already have receipts.", "success")
+        flash("No payments to receipt.", "warning")
     return redirect(url_for("view_invoice", invoice_no=invoice_no))
 
 
