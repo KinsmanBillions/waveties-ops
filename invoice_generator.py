@@ -532,27 +532,43 @@ def generate_receipt(data: dict, output_path: str):
     story.append(ColoredBox(178*mm, 2*mm, accent))
     story.append(Spacer(1, 6*mm))
 
-    # Header: logo + company | PAYMENT RECEIPT
+    # Header: logo (correct aspect) | PAYMENT RECEIPT — no extra text under logo
     logo_path = COMPANY.get("logo_path") or ""
     left_bits = []
     if logo_path and Path(logo_path).exists():
         try:
-            left_bits.append(Image(logo_path, width=28*mm, height=28*mm))
+            # Preserve natural aspect ratio (badge is ~1.63:1)
+            logo_w = 42 * mm
+            logo_h = 26 * mm
+            try:
+                from PIL import Image as _PIL
+                with _PIL.open(logo_path) as _im:
+                    iw, ih = _im.size
+                    if iw > 0 and ih > 0:
+                        logo_h = logo_w * (ih / float(iw))
+                        if logo_h > 28 * mm:
+                            logo_h = 28 * mm
+                            logo_w = logo_h * (iw / float(ih))
+            except Exception:
+                pass
+            img = Image(logo_path, width=logo_w, height=logo_h)
+            img.hAlign = "LEFT"
+            left_bits.append(img)
         except Exception:
-            pass
-    left_bits.append(Spacer(1, 1.5*mm))
-    left_bits.append(Paragraph(COMPANY.get("short_name") or "WaveTies", styles["CompanyName"]))
-    left_bits.append(Paragraph(
-        f'<font size="7" color="#5A6A7A">{COMPANY.get("tagline") or ""}</font>',
-        styles["ReceiptFromLabel"],
-    ))
+            left_bits.append(Paragraph(
+                COMPANY.get("short_name") or "WaveTies", styles["CompanyName"]
+            ))
+    else:
+        left_bits.append(Paragraph(
+            COMPANY.get("short_name") or "WaveTies", styles["CompanyName"]
+        ))
 
     right_bits = [
         Paragraph("PAYMENT RECEIPT", styles["ReceiptTitle"]),
     ]
     header = Table([[left_bits, right_bits]], colWidths=[95*mm, 83*mm])
     header.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("ALIGN", (1, 0), (1, 0), "RIGHT"),
         ("LEFTPADDING", (0, 0), (-1, -1), 0),
         ("RIGHTPADDING", (0, 0), (-1, -1), 0),
@@ -560,28 +576,23 @@ def generate_receipt(data: dict, output_path: str):
     story.append(header)
     story.append(Spacer(1, 8*mm))
 
-    # Received From | meta (receipt no, date, method, ref)
+    # Received From: name, then email (blank if none), then invoice
     currency = data.get("currency") or "GHS"
     cust_name = data.get("customer_name") or "—"
-    cust_email = data.get("customer_email") or ""
-    cust_phone = data.get("customer_phone") or ""
+    cust_email = (data.get("customer_email") or "").strip()
     from_lines = [
         Paragraph("Received From", styles["ReceiptFromLabel"]),
         Spacer(1, 1*mm),
         Paragraph(cust_name, styles["ReceiptFromName"]),
     ]
+    # Email directly under name — leave blank line space only if present
     if cust_email:
         from_lines.append(Paragraph(
             f'<font size="8" color="#5A6A7A">{cust_email}</font>',
             styles["ReceiptFromLabel"],
         ))
-    if cust_phone:
-        from_lines.append(Paragraph(
-            f'<font size="8" color="#5A6A7A">{cust_phone}</font>',
-            styles["ReceiptFromLabel"],
-        ))
     if data.get("invoice_no"):
-        from_lines.append(Spacer(1, 2*mm))
+        from_lines.append(Spacer(1, 1.5*mm))
         from_lines.append(Paragraph(
             f'<font size="8" color="#5A6A7A">Invoice: {data.get("invoice_no")}</font>',
             styles["ReceiptFromLabel"],
@@ -656,18 +667,8 @@ def generate_receipt(data: dict, output_path: str):
     else:
         story.append(Spacer(1, 8*mm))
 
-    story.append(Spacer(1, 20*mm))
+    story.append(Spacer(1, 22*mm))
     story.append(Paragraph("Thank you for your payment!", styles["ReceiptThanks"]))
-    story.append(Spacer(1, 6*mm))
-    story.append(HRFlowable(
-        width="40%", thickness=0.4, color=colors.HexColor("#CCCCCC"),
-        spaceBefore=2, spaceAfter=3, hAlign="CENTER",
-    ))
-    story.append(Paragraph(
-        f'<font size="7" color="#5A6A7A">{COMPANY.get("name") or ""} · '
-        f'{COMPANY.get("phone") or ""} · {COMPANY.get("email") or ""}</font>',
-        styles["ReceiptThanks"],
-    ))
 
     doc.build(story)
     return output_path
