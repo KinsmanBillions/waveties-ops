@@ -47,44 +47,57 @@
     .navbar-brand {
       display: flex;
       align-items: center;
-      gap: 0.5rem;
+      gap: 0.45rem;
       font-weight: 700;
       font-size: 0.95rem;
       color: white;
       text-decoration: none;
       flex-shrink: 0;
       white-space: nowrap;
-      margin-right: 0.35rem;
-      padding-right: 0.5rem;
-      border-right: 1px solid rgba(255,255,255,0.2);
+      margin-right: 0.5rem;
+      padding-right: 0.75rem;
+      border-right: 1px solid rgba(255,255,255,0.22);
+      max-width: 140px;
+      overflow: hidden;
     }
-    .navbar-brand img { height: 30px; width: 30px; border-radius: 6px; }
+    .navbar-brand img { height: 28px; width: 28px; border-radius: 6px; object-fit: contain; flex-shrink: 0; }
     .navbar-center {
       display: flex;
       flex-wrap: nowrap;
       align-items: center;
-      gap: 0;
-      flex: 1;
-      justify-content: center;
+      gap: 0.15rem;
+      flex: 1 1 auto;
+      justify-content: flex-start;
       min-width: 0;
-      overflow-x: auto;
-      scrollbar-width: none;
+      overflow: visible;
+      margin-left: 0.25rem;
     }
-    .navbar-center::-webkit-scrollbar { display: none; }
-    .navbar-center a {
-      color: rgba(255,255,255,0.9);
-      font-size: 0.72rem;
-      font-weight: 500;
+    .navbar-center > a,
+    .navbar-center .nav-dropdown-toggle {
+      color: rgba(255,255,255,0.92);
+      font-size: 0.8rem;
+      font-weight: 550;
       text-decoration: none;
-      padding: 0.3rem 0.38rem;
-      border-radius: 4px;
+      padding: 0.4rem 0.55rem;
+      border-radius: 6px;
       white-space: nowrap;
       flex-shrink: 0;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      font-family: inherit;
     }
-    .navbar-center a:hover {
+    .navbar-center > a:hover,
+    .navbar-center .nav-dropdown-toggle:hover {
       color: white;
-      background: rgba(0,180,216,0.25);
+      background: rgba(0,180,216,0.28);
       text-decoration: none;
+    }
+    .navbar-center .nav-dropdown {
+      flex-shrink: 0;
+    }
+    .navbar-center .nav-dropdown-menu {
+      z-index: 400;
     }
     .navbar-right {
       display: flex;
@@ -199,7 +212,7 @@
     }
     .nav-toggle:hover { background: rgba(0,180,216,0.4); }
 
-    @media (max-width: 1300px) {
+    @media (max-width: 1200px) {
       .navbar {
         flex-wrap: wrap;
         padding: 0.5rem 0.75rem;
@@ -519,24 +532,49 @@
     </a>
     <button type="button" class="nav-toggle" id="navToggle" aria-label="Menu">☰</button>
 
-    <div class="navbar-center">
+    <div class="navbar-center" id="navCenter">
       <a href="{{ url_for('dashboard') }}">Dashboard</a>
       <a href="{{ url_for('ops_orders') }}">Orders</a>
       <a href="{{ url_for('ops_clients') }}">Clients</a>
-      <a href="{{ url_for('invoice_list') }}">Invoices</a>
-      <a href="{{ url_for('create_invoice_page') }}">+ Invoice</a>
-      <a href="{{ url_for('ops_payments') }}">Payments</a>
-      <a href="{{ url_for('ops_expenses') }}">Expenses</a>
-      <a href="{{ url_for('ops_incomes') }}">Income</a>
-      <a href="{{ url_for('hr_employees') }}">Employees</a>
-      <a href="{{ url_for('hr_payslips') }}">Payslips</a>
+
+      <div class="nav-dropdown">
+        <button type="button" class="nav-dropdown-toggle">Invoices ▾</button>
+        <div class="nav-dropdown-menu">
+          <a href="{{ url_for('invoice_list') }}">All invoices</a>
+          <a href="{{ url_for('create_invoice_page') }}">+ New invoice</a>
+          <a href="{{ url_for('customers_list') }}">Customers</a>
+        </div>
+      </div>
+
+      <div class="nav-dropdown">
+        <button type="button" class="nav-dropdown-toggle">Finance ▾</button>
+        <div class="nav-dropdown-menu">
+          <a href="{{ url_for('ops_payments') }}">Payments</a>
+          <a href="{{ url_for('ops_expenses') }}">Expenses</a>
+          <a href="{{ url_for('ops_incomes') }}">Income</a>
+          <a href="{{ url_for('financial_report') }}">Financial report</a>
+          <a href="{{ url_for('reports') }}">Reports</a>
+        </div>
+      </div>
+
+      <div class="nav-dropdown">
+        <button type="button" class="nav-dropdown-toggle">Operations ▾</button>
+        <div class="nav-dropdown-menu">
+          <a href="{{ url_for('ops_shipments') }}">Shipments</a>
+          <a href="{{ url_for('ops_rmb') }}">RMB Desk</a>
+          <a href="{{ url_for('ops_sourcing') }}">Sourcing</a>
+        </div>
+      </div>
+
+      <div class="nav-dropdown">
+        <button type="button" class="nav-dropdown-toggle">HR ▾</button>
+        <div class="nav-dropdown-menu">
+          <a href="{{ url_for('hr_employees') }}">Employees</a>
+          <a href="{{ url_for('hr_payslips') }}">Payslips</a>
+        </div>
+      </div>
+
       <a href="{{ url_for('manager_home') }}">Manager</a>
-      <a href="{{ url_for('ops_shipments') }}">Shipments</a>
-      <a href="{{ url_for('ops_rmb') }}">RMB Desk</a>
-      <a href="{{ url_for('ops_sourcing') }}">Sourcing</a>
-      <a href="{{ url_for('customers_list') }}">Customers</a>
-      <a href="{{ url_for('reports') }}">Reports</a>
-      <a href="{{ url_for('financial_report') }}">Financial</a>
     </div>
 
     <div class="navbar-right">
