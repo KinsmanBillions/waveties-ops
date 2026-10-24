@@ -188,6 +188,45 @@ def init_ops_db():
         )""")
 
         # Migrations: link to cash accounts
+        
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS employees (
+            employee_id TEXT PRIMARY KEY,
+            full_name TEXT NOT NULL,
+            phone TEXT,
+            email TEXT,
+            position TEXT,
+            department TEXT,
+            hire_date TEXT,
+            basic_salary REAL DEFAULT 0,
+            currency TEXT DEFAULT 'GHS',
+            bank_details TEXT,
+            momo_number TEXT,
+            status TEXT DEFAULT 'Active',
+            notes TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+        c.execute("""
+        CREATE TABLE IF NOT EXISTS payslips (
+            payslip_id TEXT PRIMARY KEY,
+            employee_id TEXT NOT NULL,
+            period_label TEXT,
+            period_start TEXT,
+            period_end TEXT,
+            basic_salary REAL DEFAULT 0,
+            allowances REAL DEFAULT 0,
+            deductions REAL DEFAULT 0,
+            net_pay REAL DEFAULT 0,
+            currency TEXT DEFAULT 'GHS',
+            status TEXT DEFAULT 'Draft',
+            paid_date TEXT,
+            payment_account TEXT,
+            payment_method TEXT,
+            notes TEXT,
+            recorded_by TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )""")
+
         for tbl, col in (("expenses", "account"), ("incomes", "account"), ("payments", "account")):
             try:
                 cols = [r[1] for r in c.execute(f"PRAGMA table_info({tbl})").fetchall()]
@@ -814,3 +853,181 @@ def financial_summary(start_date, end_date):
         "income_by_category": by_cat(incomes, lambda s: s in ("Received", "Cleared")),
         "expense_by_category": by_cat(expenses, lambda s: s == "Paid"),
     }
+
+
+
+# ── Employees & Payslips ──────────────────────────────────────
+def next_employee_id():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT employee_id FROM employees").fetchall()
+    nums = []
+    for r in rows:
+        try:
+            nums.append(int(str(r[0]).split("-")[-1]))
+        except Exception:
+            pass
+    n = max(nums) + 1 if nums else 1
+    return f"EMP-{n:04d}"
+
+
+def list_employees(status=None):
+    with get_conn() as conn:
+        if status:
+            rows = conn.execute(
+                "SELECT * FROM employees WHERE status=? ORDER BY full_name", (status,)
+            ).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM employees ORDER BY full_name").fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_employee(employee_id):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM employees WHERE employee_id=?", (employee_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def add_employee(data: dict):
+    eid = data.get("employee_id") or next_employee_id()
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO employees (employee_id, full_name, phone, email, position, department, "
+            "hire_date, basic_salary, currency, bank_details, momo_number, status, notes) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                eid,
+                data.get("full_name") or "",
+                data.get("phone") or "",
+                data.get("email") or "",
+                data.get("position") or "",
+                data.get("department") or "",
+                data.get("hire_date") or "",
+                float(data.get("basic_salary") or 0),
+                data.get("currency") or "GHS",
+                data.get("bank_details") or "",
+                data.get("momo_number") or "",
+                data.get("status") or "Active",
+                data.get("notes") or "",
+            ),
+        )
+    return eid
+
+
+def update_employee(employee_id, data: dict):
+    cols = [
+        "full_name", "phone", "email", "position", "department", "hire_date",
+        "basic_salary", "currency", "bank_details", "momo_number", "status", "notes",
+    ]
+    sets = []
+    vals = []
+    for c in cols:
+        if c in data:
+            sets.append(f"{c}=?")
+            vals.append(data[c])
+    if not sets:
+        return
+    vals.append(employee_id)
+    with get_conn() as conn:
+        conn.execute(f"UPDATE employees SET {', '.join(sets)} WHERE employee_id=?", vals)
+
+
+def delete_employee(employee_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM payslips WHERE employee_id=?", (employee_id,))
+        conn.execute("DELETE FROM employees WHERE employee_id=?", (employee_id,))
+
+
+def next_payslip_id():
+    with get_conn() as conn:
+        rows = conn.execute("SELECT payslip_id FROM payslips").fetchall()
+    nums = []
+    for r in rows:
+        try:
+            nums.append(int(str(r[0]).split("-")[-1]))
+        except Exception:
+            pass
+    n = max(nums) + 1 if nums else 1
+    return f"PSL-{n:04d}"
+
+
+def list_payslips(limit=200):
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT p.*, e.full_name as employee_name, e.position as employee_position "
+            "FROM payslips p LEFT JOIN employees e ON e.employee_id = p.employee_id "
+            "ORDER BY p.created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_payslip(payslip_id):
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT p.*, e.full_name as employee_name, e.position as employee_position, "
+            "e.department, e.phone as employee_phone, e.email as employee_email, "
+            "e.bank_details, e.momo_number "
+            "FROM payslips p LEFT JOIN employees e ON e.employee_id = p.employee_id "
+            "WHERE p.payslip_id=?",
+            (payslip_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def add_payslip(data: dict):
+    pid = data.get("payslip_id") or next_payslip_id()
+    basic = float(data.get("basic_salary") or 0)
+    allow = float(data.get("allowances") or 0)
+    ded = float(data.get("deductions") or 0)
+    net = float(data.get("net_pay") if data.get("net_pay") is not None else (basic + allow - ded))
+    with get_conn() as conn:
+        conn.execute(
+            "INSERT INTO payslips (payslip_id, employee_id, period_label, period_start, period_end, "
+            "basic_salary, allowances, deductions, net_pay, currency, status, paid_date, "
+            "payment_account, payment_method, notes, recorded_by) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                pid,
+                data.get("employee_id") or "",
+                data.get("period_label") or "",
+                data.get("period_start") or "",
+                data.get("period_end") or "",
+                basic,
+                allow,
+                ded,
+                net,
+                data.get("currency") or "GHS",
+                data.get("status") or "Draft",
+                data.get("paid_date") or "",
+                data.get("payment_account") or "",
+                data.get("payment_method") or "",
+                data.get("notes") or "",
+                data.get("recorded_by") or "",
+            ),
+        )
+    return pid
+
+
+def update_payslip(payslip_id, data: dict):
+    cols = [
+        "employee_id", "period_label", "period_start", "period_end",
+        "basic_salary", "allowances", "deductions", "net_pay", "currency",
+        "status", "paid_date", "payment_account", "payment_method", "notes",
+    ]
+    sets, vals = [], []
+    for c in cols:
+        if c in data:
+            sets.append(f"{c}=?")
+            vals.append(data[c])
+    if not sets:
+        return
+    vals.append(payslip_id)
+    with get_conn() as conn:
+        conn.execute(f"UPDATE payslips SET {', '.join(sets)} WHERE payslip_id=?", vals)
+
+
+def delete_payslip(payslip_id):
+    with get_conn() as conn:
+        conn.execute("DELETE FROM payslips WHERE payslip_id=?", (payslip_id,))

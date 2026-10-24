@@ -973,3 +973,116 @@ if __name__ == "__main__":
         print("  python invoice_generator.py create --customer 'John Doe' \\")
         print("         --email john@example.com --tracking KK123 --weight 10 \\")
         print("         --amount 150 --item 'A4 Paper'")
+
+
+
+def generate_payslip(data: dict, output_path: str):
+    """Simple professional payslip PDF."""
+    styles = create_styles()
+
+    def _add(**kw):
+        try:
+            styles.add(ParagraphStyle(**kw))
+        except Exception:
+            pass
+
+    _add(name="PSTitle", fontName="Helvetica-Bold", fontSize=16,
+         textColor=COMPANY["header_bg"], alignment=TA_RIGHT, leading=20)
+    _add(name="PSLabel", fontName="Helvetica", fontSize=8,
+         textColor=COMPANY["muted"], leading=11)
+    _add(name="PSValue", fontName="Helvetica-Bold", fontSize=10,
+         textColor=COMPANY["text"], leading=13)
+    _add(name="PSName", fontName="Helvetica-Bold", fontSize=12,
+         textColor=COMPANY["text"], leading=15)
+
+    doc = SimpleDocTemplate(
+        output_path, pagesize=A4,
+        rightMargin=16*mm, leftMargin=16*mm, topMargin=12*mm, bottomMargin=16*mm,
+    )
+    story = []
+    story.append(ColoredBox(178*mm, 2*mm, COMPANY["primary"]))
+    story.append(Spacer(1, 6*mm))
+
+    logo_path = COMPANY.get("logo_path") or ""
+    left = []
+    if logo_path and Path(logo_path).exists():
+        try:
+            left.append(Image(logo_path, width=40*mm, height=24*mm))
+        except Exception:
+            pass
+    right = [Paragraph("PAYSLIP", styles["PSTitle"])]
+    hdr = Table([[left, right]], colWidths=[95*mm, 83*mm])
+    hdr.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    story.append(hdr)
+    story.append(Spacer(1, 8*mm))
+
+    emp = data.get("employee_name") or "—"
+    story.append(Paragraph("Employee", styles["PSLabel"]))
+    story.append(Paragraph(emp, styles["PSName"]))
+    bits = []
+    if data.get("employee_position"):
+        bits.append(str(data["employee_position"]))
+    if data.get("department"):
+        bits.append(str(data["department"]))
+    if bits:
+        story.append(Paragraph(
+            f'<font size="8" color="#5A6A7A">{" · ".join(bits)}</font>', styles["PSLabel"]
+        ))
+    story.append(Spacer(1, 4*mm))
+
+    meta = [
+        [Paragraph("Payslip No.", styles["PSLabel"]), Paragraph(str(data.get("payslip_id") or "—"), styles["PSValue"])],
+        [Paragraph("Period", styles["PSLabel"]), Paragraph(str(data.get("period_label") or "—"), styles["PSValue"])],
+        [Paragraph("Status", styles["PSLabel"]), Paragraph(str(data.get("status") or "—"), styles["PSValue"])],
+    ]
+    mt = Table(meta, colWidths=[35*mm, 60*mm])
+    mt.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING", (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+    ]))
+    story.append(mt)
+    story.append(Spacer(1, 8*mm))
+
+    cur = data.get("currency") or "GHS"
+    basic = float(data.get("basic_salary") or 0)
+    allow = float(data.get("allowances") or 0)
+    ded = float(data.get("deductions") or 0)
+    net = float(data.get("net_pay") or (basic + allow - ded))
+
+    rows = [
+        [Paragraph("<b>Description</b>", styles["PSLabel"]),
+         Paragraph("<b>Amount</b>", styles["PSLabel"])],
+        [Paragraph("Basic salary", styles["PSValue"]),
+         Paragraph(f"{cur} {basic:,.2f}", styles["PSValue"])],
+        [Paragraph("Allowances", styles["PSValue"]),
+         Paragraph(f"{cur} {allow:,.2f}", styles["PSValue"])],
+        [Paragraph("Deductions", styles["PSValue"]),
+         Paragraph(f"{cur} {ded:,.2f}", styles["PSValue"])],
+        [Paragraph("<b>Net pay</b>", styles["PSValue"]),
+         Paragraph(f"<b>{cur} {net:,.2f}</b>", styles["PSValue"])],
+    ]
+    tb = Table(rows, colWidths=[120*mm, 55*mm])
+    tb.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
+        ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#E0F7FA")),
+        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+        ("INNERGRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E2E8F0")),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("ALIGN", (1, 0), (1, -1), "RIGHT"),
+    ]))
+    story.append(tb)
+    story.append(Spacer(1, 12*mm))
+    story.append(Paragraph(
+        f'<font size="9" color="#5A6A7A">Thank you — {COMPANY.get("short_name") or "WaveTies"}</font>',
+        styles["PSLabel"],
+    ))
+    doc.build(story)
+    return output_path

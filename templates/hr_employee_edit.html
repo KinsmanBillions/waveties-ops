@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Edit {{ emp.employee_id }} – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div><h1 style="margin:0;">Edit employee</h1><p class="page-sub">{{ emp.employee_id }}</p></div>
+  <a href="{{ url_for('hr_employees') }}" class="btn btn-outline">← Employees</a>
+</div>
+<div class="card">
+  <form method="post">
+    <div class="form-row">
+      <div class="form-group"><label>Full name *</label><input name="full_name" value="{{ emp.full_name }}" required></div>
+      <div class="form-group"><label>Position</label><input name="position" value="{{ emp.position or '' }}"></div>
+      <div class="form-group"><label>Department</label><input name="department" value="{{ emp.department or '' }}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Phone</label><input name="phone" value="{{ emp.phone or '' }}"></div>
+      <div class="form-group"><label>Email</label><input name="email" value="{{ emp.email or '' }}"></div>
+      <div class="form-group"><label>Hire date</label><input name="hire_date" type="date" value="{{ emp.hire_date or '' }}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Basic salary</label><input name="basic_salary" type="number" step="0.01" value="{{ emp.basic_salary or 0 }}"></div>
+      <div class="form-group"><label>Currency</label>
+        <select name="currency">
+          {% for c in currencies %}<option value="{{ c }}" {% if c == emp.currency %}selected{% endif %}>{{ c }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>MoMo</label><input name="momo_number" value="{{ emp.momo_number or '' }}"></div>
+      <div class="form-group"><label>Bank</label><input name="bank_details" value="{{ emp.bank_details or '' }}"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Status</label>
+        <select name="status">
+          <option {% if emp.status=='Active' %}selected{% endif %}>Active</option>
+          <option {% if emp.status=='Inactive' %}selected{% endif %}>Inactive</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Notes</label><input name="notes" value="{{ emp.notes or '' }}"></div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save</button>
+  </form>
+</div>
+{% endblock %}

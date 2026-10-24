@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Employees – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 style="margin:0;">Employees</h1>
+    <p class="page-sub">Staff records linked to payslips</p>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:1.25rem;">
+  <div class="card-title">Add employee</div>
+  <form method="post" action="{{ url_for('hr_employee_new') }}">
+    <div class="form-row">
+      <div class="form-group"><label>Full name *</label><input name="full_name" required></div>
+      <div class="form-group"><label>Position</label><input name="position" placeholder="e.g. Receptionist"></div>
+      <div class="form-group"><label>Department</label><input name="department" placeholder="e.g. Operations"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Phone</label><input name="phone"></div>
+      <div class="form-group"><label>Email</label><input name="email" type="email"></div>
+      <div class="form-group"><label>Hire date</label><input name="hire_date" type="date"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Basic salary</label><input name="basic_salary" type="number" step="0.01" value="0"></div>
+      <div class="form-group"><label>Currency</label>
+        <select name="currency"><option>GHS</option><option>USD</option><option>CNY</option></select>
+      </div>
+      <div class="form-group"><label>MoMo number</label><input name="momo_number"></div>
+      <div class="form-group"><label>Bank details</label><input name="bank_details"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Status</label>
+        <select name="status"><option>Active</option><option>Inactive</option></select>
+      </div>
+      <div class="form-group"><label>Notes</label><input name="notes"></div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save employee</button>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">All employees ({{ employees|length }})</div>
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr><th>ID</th><th>Name</th><th>Position</th><th>Phone</th><th>Salary</th><th>Status</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for e in employees %}
+      <tr>
+        <td><b>{{ e.employee_id }}</b></td>
+        <td>{{ e.full_name }}</td>
+        <td>{{ e.position or '—' }}</td>
+        <td>{{ e.phone or '—' }}</td>
+        <td>{{ e.currency or 'GHS' }} {{ '%.2f'|format(e.basic_salary or 0) }}</td>
+        <td><span class="pill">{{ e.status }}</span></td>
+        <td style="white-space:nowrap;">
+          <a class="btn btn-sm btn-outline" href="{{ url_for('hr_employee_edit', employee_id=e.employee_id) }}">Edit</a>
+          <form method="post" action="{{ url_for('hr_employee_delete', employee_id=e.employee_id) }}" style="display:inline;" onsubmit="return confirm('Delete employee?');">
+            <button type="submit" class="btn btn-sm" style="color:var(--danger);background:transparent;border:1px solid #fecaca;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" style="text-align:center;color:var(--muted);">No employees yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

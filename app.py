@@ -30,12 +30,14 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from invoice_generator import (
-    generate_invoice, generate_receipt, create_receipt_for_payment,
+    generate_invoice, generate_receipt, create_receipt_for_payment, generate_payslip,
     load_db, save_db, create_invoice,
     COMPANY, OUTPUT_DIR
 )
 import operations as ops
+import manager_books as mgr
 ops.init_ops_db()
+mgr.init_manager_db()
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", secrets.token_hex(32))
@@ -118,6 +120,9 @@ PERMISSIONS = [
     ("reports", "Reports"),
     ("financial", "Financial report & PDF"),
     ("accounts", "Accounts / treasury"),
+    ("employees", "Employees"),
+    ("payslips", "Payslips"),
+    ("manager_books", "Manager Books (standalone)"),
     ("users", "Manage users & permissions"),
     ("smtp", "Email / SMTP settings"),
     ("reset_data", "Reset system data"),
@@ -130,12 +135,12 @@ ROLE_DEFAULT_PERMISSIONS = {
         "dashboard", "invoices_view", "invoices_create", "invoices_edit", "invoices_pay",
         "customers", "clients_view", "clients_manage", "orders_view", "orders_manage",
         "orders_status", "payments", "expenses", "incomes", "shipments", "rmb", "sourcing",
-        "reports", "financial", "accounts",
+        "reports", "financial", "accounts", "employees", "payslips", "manager_books",
     ],
     "accountant": [
         "dashboard", "invoices_view", "invoices_create", "invoices_pay", "customers",
         "clients_view", "orders_view", "payments", "expenses", "incomes",
-        "reports", "financial", "accounts",
+        "reports", "financial", "accounts", "employees", "payslips",
     ],
     "operations": [
         "dashboard", "invoices_view", "clients_view", "orders_view", "orders_manage",
@@ -3602,6 +3607,344 @@ def financial_report_pdf():
     buf.seek(0)
     fname = f"WaveTies_Financial_{start_d}_to_{end_d}.pdf"
     return send_file(buf, as_attachment=True, download_name=fname, mimetype="application/pdf")
+
+
+
+
+# ══════════════════════════════════════════════════════════════
+# Employees
+# ══════════════════════════════════════════════════════════════
+@app.route("/hr/employees")
+@login_required
+def hr_employees():
+    if not has_perm("employees") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    employees = ops.list_employees()
+    return render_template(
+        "hr_employees.html",
+        employees=employees,
+        company=COMPANY,
+        user=session,
+        currencies=CURRENCIES,
+    )
+
+
+@app.route("/hr/employees/new", methods=["POST"])
+@login_required
+def hr_employee_new():
+    if not has_perm("employees") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    name = (request.form.get("full_name") or "").strip()
+    if not name:
+        flash("Full name is required.", "danger")
+        return redirect(url_for("hr_employees"))
+    eid = ops.add_employee({
+        "full_name": name,
+        "phone": request.form.get("phone") or "",
+        "email": request.form.get("email") or "",
+        "position": request.form.get("position") or "",
+        "department": request.form.get("department") or "",
+        "hire_date": request.form.get("hire_date") or "",
+        "basic_salary": float(request.form.get("basic_salary") or 0),
+        "currency": request.form.get("currency") or "GHS",
+        "bank_details": request.form.get("bank_details") or "",
+        "momo_number": request.form.get("momo_number") or "",
+        "status": request.form.get("status") or "Active",
+        "notes": request.form.get("notes") or "",
+    })
+    flash(f"Employee {eid} added.", "success")
+    return redirect(url_for("hr_employees"))
+
+
+@app.route("/hr/employees/<employee_id>/edit", methods=["GET", "POST"])
+@login_required
+def hr_employee_edit(employee_id):
+    if not has_perm("employees") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    emp = ops.get_employee(employee_id)
+    if not emp:
+        flash("Employee not found.", "danger")
+        return redirect(url_for("hr_employees"))
+    if request.method == "POST":
+        ops.update_employee(employee_id, {
+            "full_name": request.form.get("full_name") or emp["full_name"],
+            "phone": request.form.get("phone") or "",
+            "email": request.form.get("email") or "",
+            "position": request.form.get("position") or "",
+            "department": request.form.get("department") or "",
+            "hire_date": request.form.get("hire_date") or "",
+            "basic_salary": float(request.form.get("basic_salary") or 0),
+            "currency": request.form.get("currency") or "GHS",
+            "bank_details": request.form.get("bank_details") or "",
+            "momo_number": request.form.get("momo_number") or "",
+            "status": request.form.get("status") or "Active",
+            "notes": request.form.get("notes") or "",
+        })
+        flash("Employee updated.", "success")
+        return redirect(url_for("hr_employees"))
+    return render_template(
+        "hr_employee_edit.html",
+        emp=emp,
+        company=COMPANY,
+        user=session,
+        currencies=["GHS", "USD", "CNY", "EUR"],
+    )
+
+
+@app.route("/hr/employees/<employee_id>/delete", methods=["POST"])
+@login_required
+def hr_employee_delete(employee_id):
+    if not has_perm("employees") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    ops.delete_employee(employee_id)
+    flash("Employee deleted.", "success")
+    return redirect(url_for("hr_employees"))
+
+
+# ══════════════════════════════════════════════════════════════
+# Payslips
+# ══════════════════════════════════════════════════════════════
+@app.route("/hr/payslips")
+@login_required
+def hr_payslips():
+    if not has_perm("payslips") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    slips = ops.list_payslips()
+    employees = ops.list_employees(status="Active")
+    return render_template(
+        "hr_payslips.html",
+        payslips=slips,
+        employees=employees,
+        company=COMPANY,
+        user=session,
+        accounts=ACCOUNT_OPTIONS,
+    )
+
+
+@app.route("/hr/payslips/new", methods=["POST"])
+@login_required
+def hr_payslip_new():
+    if not has_perm("payslips") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    emp_id = (request.form.get("employee_id") or "").strip()
+    if not emp_id:
+        flash("Select an employee.", "danger")
+        return redirect(url_for("hr_payslips"))
+    emp = ops.get_employee(emp_id) or {}
+    basic = float(request.form.get("basic_salary") or emp.get("basic_salary") or 0)
+    allow = float(request.form.get("allowances") or 0)
+    ded = float(request.form.get("deductions") or 0)
+    net = basic + allow - ded
+    status = request.form.get("status") or "Draft"
+    account = (request.form.get("payment_account") or "").strip()
+    pid = ops.add_payslip({
+        "employee_id": emp_id,
+        "period_label": request.form.get("period_label") or "",
+        "period_start": request.form.get("period_start") or "",
+        "period_end": request.form.get("period_end") or "",
+        "basic_salary": basic,
+        "allowances": allow,
+        "deductions": ded,
+        "net_pay": net,
+        "currency": request.form.get("currency") or emp.get("currency") or "GHS",
+        "status": status,
+        "paid_date": request.form.get("paid_date") or "",
+        "payment_account": account,
+        "payment_method": request.form.get("payment_method") or "",
+        "notes": request.form.get("notes") or "",
+        "recorded_by": session.get("username") or "",
+    })
+    # If marked Paid and account selected → salary expense on main books + wallet
+    if status == "Paid" and account and net > 0:
+        try:
+            ops.add_expense({
+                "expense_date": request.form.get("paid_date") or datetime.now().strftime("%Y-%m-%d"),
+                "category": "Salaries & Wages",
+                "subcategory": pid,
+                "description": f"Salary {emp.get('full_name') or emp_id} · {request.form.get('period_label') or ''}",
+                "payee": emp.get("full_name") or emp_id,
+                "worker_username": "",
+                "amount": net,
+                "currency": request.form.get("currency") or emp.get("currency") or "GHS",
+                "amount_usd": ops.to_usd(net, request.form.get("currency") or emp.get("currency") or "GHS"),
+                "payment_method": request.form.get("payment_method") or "Other",
+                "reference": pid,
+                "status": "Paid",
+                "recorded_by": session.get("username") or "",
+                "notes": f"Auto from payslip {pid}",
+                "account": account,
+            })
+            adjust_wallet(account, -net, request.form.get("currency") or "GHS")
+        except Exception as e:
+            flash(f"Payslip saved, but salary expense failed: {e}", "warning")
+    # PDF
+    try:
+        slip = ops.get_payslip(pid)
+        safe = pid.replace("/", "-")
+        generate_payslip(slip, str(OUTPUT_DIR / f"Payslip_{safe}.pdf"))
+    except Exception as e:
+        print(f"[WaveTies] payslip pdf: {e}", flush=True)
+    flash(f"Payslip {pid} created.", "success")
+    return redirect(url_for("hr_payslips"))
+
+
+@app.route("/hr/payslips/<payslip_id>/pdf")
+@login_required
+def hr_payslip_pdf(payslip_id):
+    if not has_perm("payslips") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    slip = ops.get_payslip(payslip_id)
+    if not slip:
+        flash("Payslip not found.", "danger")
+        return redirect(url_for("hr_payslips"))
+    safe = payslip_id.replace("/", "-")
+    pdf_path = OUTPUT_DIR / f"Payslip_{safe}.pdf"
+    generate_payslip(slip, str(pdf_path))
+    from flask import send_file
+    return send_file(pdf_path, as_attachment=True, download_name=f"Payslip_{safe}.pdf")
+
+
+@app.route("/hr/payslips/<payslip_id>/delete", methods=["POST"])
+@login_required
+def hr_payslip_delete(payslip_id):
+    if not has_perm("payslips") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    ops.delete_payslip(payslip_id)
+    flash("Payslip deleted.", "success")
+    return redirect(url_for("hr_payslips"))
+
+
+# ══════════════════════════════════════════════════════════════
+# Manager Books (standalone — NOT linked to main system)
+# ══════════════════════════════════════════════════════════════
+@app.route("/manager")
+@login_required
+def manager_home():
+    if not has_perm("manager_books") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied. Ask admin to grant Manager Books permission.", "danger")
+        return redirect(url_for("dashboard"))
+    mgr.init_manager_db()
+    summary = mgr.summary()
+    entries = mgr.list_entries(limit=100)
+    accounts = mgr.list_accounts()
+    return render_template(
+        "manager_home.html",
+        summary=summary,
+        entries=entries,
+        accounts=accounts,
+        company=COMPANY,
+        user=session,
+    )
+
+
+@app.route("/manager/entry", methods=["POST"])
+@login_required
+def manager_entry_new():
+    if not has_perm("manager_books") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    amount = float(request.form.get("amount") or 0)
+    if amount <= 0:
+        flash("Amount must be greater than zero.", "danger")
+        return redirect(url_for("manager_home"))
+    eid = mgr.add_entry({
+        "entry_date": request.form.get("entry_date") or datetime.now().strftime("%Y-%m-%d"),
+        "account_id": request.form.get("account_id") or "",
+        "direction": request.form.get("direction") or "IN",
+        "category": request.form.get("category") or "",
+        "description": request.form.get("description") or "",
+        "amount": amount,
+        "currency": request.form.get("currency") or "GHS",
+        "reference": request.form.get("reference") or "",
+        "recorded_by": session.get("username") or "",
+        "notes": request.form.get("notes") or "",
+    })
+    flash(f"Manager entry {eid} saved (manual books only).", "success")
+    return redirect(url_for("manager_home"))
+
+
+@app.route("/manager/account", methods=["POST"])
+@login_required
+def manager_account_new():
+    if not has_perm("manager_books") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    name = (request.form.get("name") or "").strip()
+    if not name:
+        flash("Account name required.", "danger")
+        return redirect(url_for("manager_home"))
+    aid = mgr.add_account({
+        "name": name,
+        "account_type": request.form.get("account_type") or "Cash",
+        "currency": request.form.get("currency") or "GHS",
+        "opening_balance": float(request.form.get("opening_balance") or 0),
+        "notes": request.form.get("notes") or "",
+    })
+    flash(f"Manager account {aid} added.", "success")
+    return redirect(url_for("manager_home"))
+
+
+@app.route("/manager/entry/<entry_id>/delete", methods=["POST"])
+@login_required
+def manager_entry_delete(entry_id):
+    if not has_perm("manager_books") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    mgr.delete_entry(entry_id)
+    flash("Entry deleted.", "success")
+    return redirect(url_for("manager_home"))
+
+
+@app.route("/manager/export")
+@login_required
+def manager_export():
+    """Export Manager backup JSON for reception → admin transfer."""
+    if not has_perm("manager_books") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    import json as _json
+    from flask import Response
+    payload = mgr.export_backup()
+    body = _json.dumps(payload, indent=2, ensure_ascii=False)
+    fname = f"WaveTies_Manager_Backup_{datetime.now().strftime('%Y%m%d_%H%M')}.json"
+    return Response(
+        body,
+        mimetype="application/json",
+        headers={"Content-Disposition": f"attachment; filename={fname}"},
+    )
+
+
+@app.route("/manager/import", methods=["POST"])
+@login_required
+def manager_import():
+    if not has_perm("manager_books") and normalize_role(session.get("role")) != "admin":
+        flash("Access denied.", "danger")
+        return redirect(url_for("dashboard"))
+    f = request.files.get("backup_file")
+    if not f or not f.filename:
+        flash("Choose a backup JSON file.", "danger")
+        return redirect(url_for("manager_home"))
+    import json as _json
+    try:
+        payload = _json.loads(f.read().decode("utf-8"))
+    except Exception as e:
+        flash(f"Could not read file: {e}", "danger")
+        return redirect(url_for("manager_home"))
+    mode = request.form.get("mode") or "merge"
+    try:
+        na, ne = mgr.import_backup(payload, mode=mode)
+        flash(f"Imported {na} accounts and {ne} entries ({mode}).", "success")
+    except Exception as e:
+        flash(f"Import failed: {e}", "danger")
+    return redirect(url_for("manager_home"))
 
 
 if __name__ == "__main__":

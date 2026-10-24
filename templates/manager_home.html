@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% block title %}Manager Books – WaveTies{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 style="margin:0;">Manager Books</h1>
+    <p class="page-sub">Standalone manual ledger — <b>not linked</b> to main Cash/MoMo/Invoices. Import/export for offline admin review.</p>
+  </div>
+  <div style="display:flex;gap:0.5rem;flex-wrap:wrap;">
+    <a href="{{ url_for('manager_export') }}" class="btn btn-primary">Export backup</a>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:1rem;padding:0.9rem 1.1rem;background:#FFF7ED;border:1px solid #FED7AA;">
+  <b>How this works</b>
+  <p style="margin:0.35rem 0 0;font-size:0.88rem;color:var(--muted);line-height:1.45;">
+    Reception (or any user with <b>Manager Books</b> permission) records manual entries here.
+    Use <b>Export backup</b> to download a JSON file and send it to the admin.
+    Admin opens Manager on their side and <b>Import</b>s the file to update their copy.
+    Nothing here auto-updates the main WaveTies wallets or invoices.
+  </p>
+</div>
+
+<div class="stats-grid" style="margin-bottom:1.25rem;">
+  <div class="stat-card"><div class="label">Total In</div><div class="value">{{ '%.2f'|format(summary.total_in) }}</div></div>
+  <div class="stat-card"><div class="label">Total Out</div><div class="value">{{ '%.2f'|format(summary.total_out) }}</div></div>
+  <div class="stat-card"><div class="label">Net</div><div class="value">{{ '%.2f'|format(summary.net) }}</div></div>
+  <div class="stat-card"><div class="label">Entries</div><div class="value">{{ summary.entries }}</div></div>
+</div>
+
+<div class="card" style="margin-bottom:1.25rem;">
+  <div class="card-title">Account balances (manual)</div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Account</th><th>Type</th><th>Balance</th></tr></thead>
+    <tbody>
+      {% for b in summary.balances %}
+      <tr>
+        <td>{{ b.name }}</td>
+        <td>{{ b.account_type }}</td>
+        <td><b>{{ b.currency }} {{ '%.2f'|format(b.balance) }}</b></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" style="color:var(--muted);">No accounts</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:1.25rem;">
+  <div class="card-title">Add manual entry</div>
+  <form method="post" action="{{ url_for('manager_entry_new') }}">
+    <div class="form-row">
+      <div class="form-group"><label>Date</label><input type="date" name="entry_date"></div>
+      <div class="form-group"><label>Account</label>
+        <select name="account_id">
+          {% for a in accounts %}<option value="{{ a.account_id }}">{{ a.name }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="form-group"><label>Direction</label>
+        <select name="direction"><option value="IN">IN</option><option value="OUT">OUT</option></select>
+      </div>
+      <div class="form-group"><label>Category</label><input name="category" placeholder="Sales / Rent / Salary…"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Amount *</label><input type="number" step="0.01" name="amount" required></div>
+      <div class="form-group"><label>Currency</label>
+        <select name="currency"><option>GHS</option><option>USD</option><option>CNY</option></select>
+      </div>
+      <div class="form-group"><label>Description</label><input name="description"></div>
+      <div class="form-group"><label>Reference</label><input name="reference"></div>
+    </div>
+    <button type="submit" class="btn btn-primary">Save entry</button>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom:1.25rem;">
+  <div class="card-title">Add Manager account</div>
+  <form method="post" action="{{ url_for('manager_account_new') }}" class="form-row">
+    <div class="form-group"><label>Name</label><input name="name" required></div>
+    <div class="form-group"><label>Type</label>
+      <select name="account_type"><option>Cash</option><option>Mobile Money</option><option>Bank</option><option>Other</option></select>
+    </div>
+    <div class="form-group"><label>Opening balance</label><input type="number" step="0.01" name="opening_balance" value="0"></div>
+    <div class="form-group"><label>Currency</label><select name="currency"><option>GHS</option><option>USD</option></select></div>
+    <div class="form-group" style="align-self:end;"><button type="submit" class="btn btn-outline">Add account</button></div>
+  </form>
+</div>
+
+<div class="card" style="margin-bottom:1.25rem;">
+  <div class="card-title">Import backup (admin)</div>
+  <form method="post" action="{{ url_for('manager_import') }}" enctype="multipart/form-data">
+    <div class="form-row">
+      <div class="form-group"><label>Backup JSON file</label><input type="file" name="backup_file" accept=".json,application/json" required></div>
+      <div class="form-group"><label>Mode</label>
+        <select name="mode">
+          <option value="merge">Merge (keep existing + update)</option>
+          <option value="replace">Replace all Manager data</option>
+        </select>
+      </div>
+      <div class="form-group" style="align-self:end;"><button type="submit" class="btn btn-navy">Import</button></div>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="card-title">Recent entries</div>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>Date</th><th>Account</th><th>Dir</th><th>Category</th><th>Amount</th><th>Desc</th><th></th></tr></thead>
+    <tbody>
+      {% for e in entries %}
+      <tr>
+        <td>{{ e.entry_date }}</td>
+        <td>{{ e.account_name or e.account_id }}</td>
+        <td><span class="pill {% if e.direction=='IN' %}pill-ok{% else %}pill-warn{% endif %}">{{ e.direction }}</span></td>
+        <td>{{ e.category or '—' }}</td>
+        <td>{{ e.currency }} {{ '%.2f'|format(e.amount or 0) }}</td>
+        <td>{{ e.description or '—' }}</td>
+        <td>
+          <form method="post" action="{{ url_for('manager_entry_delete', entry_id=e.entry_id) }}" onsubmit="return confirm('Delete?');">
+            <button type="submit" class="btn btn-sm" style="color:var(--danger);background:transparent;border:1px solid #fecaca;">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" style="text-align:center;color:var(--muted);">No entries yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}
