@@ -596,7 +596,7 @@
       <span class="nav-divider"></span>
       <span class="user-chip">
         {{ session.get('name') }}
-        <span class="badge-role">{% if r == 'admin' %}Admin{% elif r == 'manager' %}Manager{% elif r == 'accountant' %}Accountant{% elif r == 'operations' %}Operations{% elif r in ['receptionist','worker'] %}Receptionist{% else %}{{ r|title }}{% endif %}</span>
+        <span class="badge-role">{% if r == 'admin' %}Admin{% elif r == 'manager' %}Manager{% elif r == 'accountant' %}Accountant{% elif r == 'finance_clerk' %}Finance{% elif r == 'operations' %}Operations{% elif r == 'warehouse' %}Warehouse{% elif r == 'sales' %}Sales{% elif r == 'hr' %}HR{% elif r == 'customer_service' %}CS{% elif r == 'viewer' %}Viewer{% elif r in ['receptionist','worker'] %}Reception{% else %}{{ r|replace('_',' ')|title }}{% endif %}</span>
       </span>
       <a href="{{ url_for('logout') }}">Logout</a>
     </div>

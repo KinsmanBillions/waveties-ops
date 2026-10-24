@@ -81,23 +81,38 @@ def get_users_db():
 
 
 # Role catalogue (value stored in DB → display label)
+# Full logistics / supply-chain staffing model for WaveTies
 ROLES = [
-    ("receptionist", "Receptionist"),
-    ("operations", "Operations"),
-    ("accountant", "Accountant"),
-    ("manager", "Manager"),
-    ("admin", "Admin"),
+    ("admin", "Admin — full system control"),
+    ("manager", "Manager — operations & finance oversight"),
+    ("accountant", "Accountant — books, payments, reports"),
+    ("finance_clerk", "Finance Clerk — record payments & expenses"),
+    ("operations", "Operations — orders, shipments, sourcing"),
+    ("warehouse", "Warehouse — shipments & order status"),
+    ("sales", "Sales / BD — clients, orders, sourcing"),
+    ("receptionist", "Receptionist — front desk & invoices"),
+    ("hr", "HR Officer — employees & payslips"),
+    ("customer_service", "Customer Service — clients & order view"),
+    ("viewer", "Viewer — read-only reports & dashboard"),
 ]
 ROLE_LABELS = dict(ROLES)
 # Legacy alias: old "worker" accounts behave like receptionist
-ROLE_ALIASES = {"worker": "receptionist"}
+ROLE_ALIASES = {
+    "worker": "receptionist",
+    "finance": "finance_clerk",
+    "bd": "sales",
+    "sales_bd": "sales",
+    "hr_officer": "hr",
+    "cs": "customer_service",
+    "readonly": "viewer",
+}
 
-# Permission sets
+# Permission sets (legacy decorators — still used alongside granular has_perm)
 ADMIN_ROLES = {"admin"}
-MANAGE_ROLES = {"admin", "manager"}           # edit / delete commercial records
-FINANCE_ROLES = {"admin", "manager", "accountant"}  # mark paid, payments, accounts view
-OPS_STATUS_ROLES = {"admin", "manager", "operations"}  # update order/shipment status
-CREATE_ROLES = {"admin", "manager", "accountant", "operations", "receptionist", "worker"}
+MANAGE_ROLES = {"admin", "manager", "sales"}
+FINANCE_ROLES = {"admin", "manager", "accountant", "finance_clerk"}
+OPS_STATUS_ROLES = {"admin", "manager", "operations", "warehouse"}
+CREATE_ROLES = {r[0] for r in ROLES} | {"worker"}
 
 PERMISSIONS = [
     ("dashboard", "Dashboard"),
@@ -142,13 +157,37 @@ ROLE_DEFAULT_PERMISSIONS = {
         "clients_view", "orders_view", "payments", "expenses", "incomes",
         "reports", "financial", "accounts", "employees", "payslips",
     ],
+    "finance_clerk": [
+        "dashboard", "invoices_view", "invoices_pay", "customers",
+        "clients_view", "orders_view", "payments", "expenses", "incomes",
+        "reports", "financial",
+    ],
     "operations": [
         "dashboard", "invoices_view", "clients_view", "orders_view", "orders_manage",
         "orders_status", "shipments", "rmb", "sourcing",
     ],
+    "warehouse": [
+        "dashboard", "clients_view", "orders_view", "orders_status", "shipments",
+    ],
+    "sales": [
+        "dashboard", "invoices_view", "invoices_create", "customers",
+        "clients_view", "clients_manage", "orders_view", "orders_manage",
+        "sourcing", "reports",
+    ],
     "receptionist": [
         "dashboard", "invoices_view", "invoices_create", "customers",
-        "clients_view", "orders_view", "orders_manage",
+        "clients_view", "orders_view", "orders_manage", "manager_books",
+    ],
+    "hr": [
+        "dashboard", "employees", "payslips", "reports",
+    ],
+    "customer_service": [
+        "dashboard", "invoices_view", "customers", "clients_view",
+        "orders_view", "shipments",
+    ],
+    "viewer": [
+        "dashboard", "invoices_view", "clients_view", "orders_view",
+        "reports", "financial",
     ],
 }
 
